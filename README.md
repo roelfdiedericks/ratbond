@@ -5,7 +5,7 @@ combined higher throughput, and link redundancy.
 
 
 ## Concept 
-ratbond connects Linux TUN interfaces to each other using the KCP protocol over UDP to manage connections and packet retransmission/ordering. Multiple WAN interfaces can be used  to create a bonded link.
+ratbond connects Linux TUN interfaces to each other using the [KCP protocol](https://github.com/xtaci/kcp-go/) over UDP to manage connections and packet retransmission/ordering. Multiple WAN interfaces can be used  to create a bonded link.
 
 ratbond operates in either server mode (typically hosted on a VPS), or client mode (typically run on an embedded router or other device with WAN links).
 
@@ -64,6 +64,9 @@ client, connecting to 1.1.1.1:5432, tun990 device created and 10.10.10.40/30 use
 ``` 
 ./ratbond client --aes --secret=verysecret --tunnel-id=990 --connect-addr=1.1.1.1:5432 --tunnel-ip=10.10.10.40/30
 ```
+
+## KCP Protocol
+I chose the KCP protocol for this experiment, because it is a resilient, ordered, error-checked protocol with optional encryption and FEC (Forward Error Correction). I'm using KCP in the "turbo" mode configuration, but I've only really tweaked the KCP config values for maximum throughput whilst still having reliable, ordered streams. I haven't heavily performance tested the AES encryption, but it seemed to have little impact on my x86 testing.
 
 ## <a name="policyrouting"></a> Policy Routing is REQUIRED
 Policy routing on each WAN interface is required in order to ensure that ratbond packets sent out a specific WAN interface only uses the WAN interface's default route.

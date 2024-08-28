@@ -38,7 +38,7 @@ var g_debug bool = false
 var g_trace bool = false
 var g_use_consistent_hashing = true
 var g_use_kcp = true
-var g_server_addr = ""
+var g_server_addr = "154.0.6.97:12345"
 var g_listen_addr = "0.0.0.0:12345"
 var g_buffer_size = 16777217
 var g_client_tunnelid uint32=660
@@ -1331,7 +1331,7 @@ var CLI struct {
 	BalanceRoundrobin bool `help:"Use round robin packet scheduler."`
 	ConnectAddr string `help:"connect to server address:port (default:154.0.6.97:12345)"`
 	ListenAddr   string `help:"bind server to listen on address:port (default:0.0.0.0:12345)"`
-	TunnelId     uint32 `help:"tunnelid to use on client (creates e.g. tun660 interface) (default:660)"`
+	TunnelId     uint32 `help:"tunnelid to use on client (creates e.g. tun660 interface) (default:660)" default:"0"`
 	TunnelIp     string `help:"/30 (point to point) IP address to assign on client/server tun interfaces. Has to match on both sides. (default:10.10.10.0/30)"`
 	HttpListenAddr  string `help:"bind status httpserver to listen on address:port (default:0.0.0.0:8091), set to http-listen-addr=disable to not service http requests"`
 	
@@ -1374,6 +1374,12 @@ func main() {
 	if (CLI.Aes) {
 		g_use_aes = true
 		l.Infof("enabling AES encryption")
+	}
+
+	if (CLI.TunnelId!=0) {
+		g_use_aes = true
+		l.Infof("tunnel-id=%d",CLI.TunnelId)
+		g_client_tunnelid=CLI.TunnelId
 	}
 	if (CLI.ConnectAddr!="") {
 		g_server_addr = CLI.ConnectAddr		
