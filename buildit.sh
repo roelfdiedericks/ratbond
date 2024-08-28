@@ -11,7 +11,7 @@ echo "building mipsbe binary"
 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "-w" -o "ratbond_mipsbe"
 
 echo "building arm64binary"
-GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "-w" -o "ratbond_arm64"
+GOOS=linux GOARCH=arm64 GOMIPS=softfloat go build -ldflags "-w" -o "ratbond_arm64"
 
 
 echo "building x86 binary"
