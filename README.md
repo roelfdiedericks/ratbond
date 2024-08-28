@@ -41,15 +41,15 @@ This thing works for me, in my lab environment. With consistent hashing, and a m
 
 
 ## Running
-Trivial run, using defaults. This will create a tun660 interface, connecting to the default server running on 154.0.6.97:12345, with 10.10.10.0/30 used as the configured tunnel CIDR.
+Trivial run, using defaults. This will create a tun660 interface, connecting to a server running on 1.1.1.1:12345, with 10.10.10.0/30 used as the configured tunnel CIDR.
 
 server:
 ``` 
-./ratbond server
+./ratbond server --listen-addr=0.0.0.0:12345
 ```
 client:
 ``` 
-./ratbond client
+./ratbond client ---connect-addr=1.1.1.1:12345
 ```
 
 
