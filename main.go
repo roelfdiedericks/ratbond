@@ -40,7 +40,7 @@ var g_use_consistent_hashing = true
 var g_use_kcp = true
 var g_server_addr = "154.0.6.97:12345"
 var g_listen_addr = "0.0.0.0:12345"
-var g_buffer_size = 16777217
+var g_buffer_size = 65535
 var g_tunnel_id uint32=660
 var g_server_tun_ip string ="10.10.10.2"
 var g_client_tun_ip string ="10.10.10.1"
@@ -568,6 +568,7 @@ func create_session(convid uint32, src string) (*RatSession, error) {
 	//create a KCP connection, and specify the UDPConn bound to the src addr
 	//It does mean we need to close it ourself later, as kcp won't do that since it doesn't own the UDPConn
 	session,err:=NewSession(convid,l_serveraddr,l_boundconn)
+	setClientConnOptions(session.kcp)
 	return session,nil
 }
 
@@ -840,6 +841,21 @@ func setClientConnOptions(conn *kcp.UDPSession) {
 }
 
 
+func setServerConnOptions(conn *kcp.UDPSession) {
+	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
+	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
+	MTU:=g_kcp_mtu
+	SndWnd:=256
+	RcvWnd:=256
+	AckNodelay:=false //this is more speedy
+	conn.SetStreamMode(true)
+	conn.SetWriteDelay(false)
+	conn.SetNoDelay(NoDelay, Interval, Resend, NoCongestion)
+	conn.SetMtu(MTU)
+	conn.SetWindowSize(SndWnd, RcvWnd)
+	conn.SetACKNoDelay(AckNodelay)
+}
+
 func server_handle_kcp_listener(tunnelid uint32) {
 	
 	for {
@@ -942,6 +958,8 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 	l.Infof("kcp connection accepted convid:%d, remote:%s",convid ,kcp_conn.RemoteAddr())
 
 
+
+	setServerConnOptions(kcp_conn)
 
 	//find/add the client in the list
 	client,ok:=g_client_list[tunnelid]

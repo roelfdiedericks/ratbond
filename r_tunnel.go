@@ -113,8 +113,8 @@ func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 		NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 		//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 		MTU:=g_kcp_mtu
-		SndWnd:=256
-		RcvWnd:=256
+		SndWnd:=64
+		RcvWnd:=64
 		AckNodelay:=false //this is more speedy
 		s.kcp.SetStreamMode(true)
 		s.kcp.SetWriteDelay(false)
