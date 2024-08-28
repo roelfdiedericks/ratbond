@@ -87,7 +87,7 @@ func handle_route_update(update netlink.RouteUpdate, tunnelid uint32) {
 }
 
 func netlink_subscribe_routes(tunnelid uint32) {
-	l.Warnf("monitoring routes")
+	l.Infof("monitoring routes tunnelid:%d",tunnelid)
 	g_netlink_route_updates := make(chan netlink.RouteUpdate)
 	done := make(chan struct{})
 	defer close(done)
@@ -101,7 +101,7 @@ func netlink_subscribe_routes(tunnelid uint32) {
 
 
 func netlink_get_routes(tunnelid uint32) {
-	l.Tracef("getting routes, once-off")
+	l.Debugf("getting routes, once-off tunnelid:%d",tunnelid)
 	route_updates := make(chan netlink.RouteUpdate)
 	done := make(chan struct{})
 	var timeout unix.Timeval

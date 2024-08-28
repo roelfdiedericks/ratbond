@@ -41,7 +41,7 @@ var g_use_kcp = true
 var g_server_addr = "154.0.6.97:12345"
 var g_listen_addr = "0.0.0.0:12345"
 var g_buffer_size = 16777217
-var g_client_tunnelid uint32=660
+var g_tunnel_id uint32=2000
 var g_server_tun_ip string ="10.10.10.2"
 var g_client_tun_ip string ="10.10.10.1"
 var g_http_listen_addr = "0.0.0.0:8091"
@@ -160,7 +160,7 @@ func client_connection_by_src_exists(src string,server *serverType) (bool) {
 
 
 func client_connect_server(tunnelid uint32, src string, ifname string, gw string) {
-	l.Tracef("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
+	l.Debugf("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
 	
 
 	server,ok:=g_server_list[tunnelid]
@@ -187,7 +187,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	//if there's no interface, create the tun for them
 	spawn_tun:=false
 	if (server.iface == nil) {		
-		iface,err:=createTun(g_client_tun_ip,tunnelid)
+		iface,err:=createTun(tunnelid,g_client_tun_ip)
 		if err!=nil {
 			l.Errorf("error creating tun%d interface :%s",tunnelid,err)
 		}
@@ -220,7 +220,6 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server.mu.Unlock()
 	
 
-	
 
 	l.Infof("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
 
@@ -405,11 +404,11 @@ func client_send_linkdown_message(tunnelid uint32, disc_convid uint32, reason st
 	connection.txcounter++
 }
 
-func run_client() {
-	g_client_tunnelid=(g_client_tunnelid/10)*10
+func run_client(tunnelid uint32) {
+	
 
-	l.Infof("running as client, base tunnel id:%d",g_client_tunnelid)
-
+	l.Infof("running as client, base tunnel id:%d",tunnelid)
+	
 	
 	//create two connections, deprecated, handled by netlink_subscribe_routes
 	//client_connect_server(g_client_tunnelid)
@@ -420,14 +419,14 @@ func run_client() {
 
 	runthing("ip", "-br", "address")
 
-	go netlink_subscribe_ifaces(g_client_tunnelid)
+	go netlink_subscribe_ifaces(tunnelid)
 
 	// this netlink listener monitors kernel routes, and will connect to the server once a default route is seen,
 	// by calling client_connect_server with the details of the route that came up.
 	//
 	// this is how all connections to a server is established. At startup all existing route information
 	// is read by netlink_subscribe_ifaces, so that existing connections are used and initiated.
-	go netlink_subscribe_routes(g_client_tunnelid)
+	go netlink_subscribe_routes(tunnelid)
 
 	for {
         time.Sleep(10 * time.Millisecond)
@@ -459,7 +458,7 @@ func run_client() {
 
 			//we poll the routing table every now and again, in case we missed or state messed us arround
 			//this allows us to reconnect to the server every so often
-			netlink_get_routes(g_client_tunnelid)
+			netlink_get_routes(tunnelid)
         }
 
 	}
@@ -467,7 +466,7 @@ func run_client() {
 
 
 
-func run_server() {
+func run_server(tunnelid uint32) {
 
 	l.Infof("running as server")
 
@@ -491,7 +490,7 @@ func run_server() {
 	
 	
 
-	go server_handle_kcp_listener()
+	go server_handle_kcp_listener(tunnelid)
 	//go server_listen_tun(iface)
 
 
@@ -537,7 +536,7 @@ func run_server() {
 
 
 func create_session(convid uint32, src string) (*RatSession, error) {
-	l.Infof("connecting to %s: convid:%d, src:%s",g_server_addr,convid,src)
+	l.Warnf("connecting to %s: convid:%d, src:%s",g_server_addr,convid,src)
 
 
 	// network type detection
@@ -574,7 +573,7 @@ func create_session(convid uint32, src string) (*RatSession, error) {
 
 
 
-func createTun(ip string,convid uint32) (*water.Interface, error) {
+func createTun(tunnelid uint32, ip string) (*water.Interface, error) {
 	config := water.Config{
 		DeviceType: water.TUN,
 		PlatformSpecificParams: water.PlatformSpecificParams{
@@ -582,7 +581,7 @@ func createTun(ip string,convid uint32) (*water.Interface, error) {
 			},
 	}
 
-	config.Name = fmt.Sprintf("tun%d",convid)
+	config.Name = fmt.Sprintf("tun%d",tunnelid)
 
 	iface, err := water.New(config)
 	if err != nil {
@@ -841,7 +840,7 @@ func setClientConnOptions(conn *kcp.UDPSession) {
 }
 
 
-func server_handle_kcp_listener() {
+func server_handle_kcp_listener(tunnelid uint32) {
 	
 	for {
 		conn, err := g_listener.AcceptKCP()
@@ -856,7 +855,7 @@ func server_handle_kcp_listener() {
 		convid:=conn.GetConv()
 		l.Warnf("new connection! convid%d",convid)
 
-		go server_accept_conn(convid,conn)
+		go server_accept_conn(tunnelid,convid,conn)
 	}
 }
 
@@ -937,24 +936,21 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 }
 
 
-func server_accept_conn(convid uint32, kcp_conn *kcp.UDPSession) {
+func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession) {
 
 	
 	l.Infof("kcp connection accepted convid:%d, remote:%s",convid ,kcp_conn.RemoteAddr())
 
-	base_convid:=(convid/10)*10
-	l.Debugf("base conv id: %d",base_convid)
-	
 
 
 	//find/add the client in the list
-	client,ok:=g_client_list[base_convid]
+	client,ok:=g_client_list[tunnelid]
 	if !ok {
 		//new client
 		client=new(clientType)
 		client.mu=new(sync.Mutex)
 	}
-	g_client_list[base_convid]=client
+	g_client_list[tunnelid]=client
 
 	
 	client.mu.Lock()
@@ -962,15 +958,15 @@ func server_accept_conn(convid uint32, kcp_conn *kcp.UDPSession) {
 	//if there's no interface, create the tun for them
 	spawn_tun:=false
 	if (client.iface == nil) {		
-		iface,err:=createTun(g_server_tun_ip,base_convid)
+		iface,err:=createTun(tunnelid,g_server_tun_ip)
 		if err!=nil {
-			l.Errorf("error creating tun%d interface :%s",base_convid,err)
+			l.Errorf("error creating tun%d interface :%s",tunnelid,err)
 		}
 		client.iface=iface
 		client.my_tun_ip=g_server_tun_ip
 		client.remote_tun_ip=g_client_tun_ip
-		client.ifname=fmt.Sprintf("tun%d",base_convid)
-		client.base_convid=base_convid	
+		client.ifname=fmt.Sprintf("tun%d",tunnelid)
+		client.base_convid=tunnelid	
 
 		spawn_tun=true
 	}
@@ -1016,7 +1012,7 @@ func server_accept_conn(convid uint32, kcp_conn *kcp.UDPSession) {
 	
 
 	//update the main list
-	g_client_list[base_convid]=client
+	g_client_list[tunnelid]=client
 
 
 	client.mu.Unlock()
@@ -1064,7 +1060,7 @@ func server_accept_conn(convid uint32, kcp_conn *kcp.UDPSession) {
 				}
 				l.Errorf("conn read error:%s", err)
 				//close the client connection
-				server_disconnect_session_by_convid(base_convid,convid,"KCP Conn Read Error")
+				server_disconnect_session_by_convid(tunnelid,convid,"KCP Conn Read Error")
 				return
 			}
 
@@ -1091,7 +1087,7 @@ func server_accept_conn(convid uint32, kcp_conn *kcp.UDPSession) {
 				l.Errorf("received LINKDOWN:convid%d",linkdown);
 
 				//close the client connection
-				server_disconnect_session_by_convid(base_convid,uint32(linkdown),"RECVD Linkdown")
+				server_disconnect_session_by_convid(tunnelid,uint32(linkdown),"RECVD Linkdown")
 				continue;
 			}
 
@@ -1101,7 +1097,7 @@ func server_accept_conn(convid uint32, kcp_conn *kcp.UDPSession) {
 				if err != nil {
 					l.Errorf("iface write err:", err)
 					//close the client connection
-					server_disconnect_session_by_convid(base_convid,convid,"TUN write error")
+					server_disconnect_session_by_convid(tunnelid,convid,"TUN write error")
 					return
 				} else {
 					l.Tracef("iface write done")
@@ -1347,16 +1343,28 @@ func main() {
 
 	
 	ctx := kong.Parse(&CLI)
-	init_logging()
+	
+
+	g_tunnel_id=3000
 
 	if (CLI.Debug) {
 		g_debug = true
-		l.Infof("enabling debug")
+		
 	}
 	if (CLI.Trace) {
 		g_trace = true
-		l.Infof("enabling trace")
+		g_debug = true
+
 	}
+
+	init_logging()
+	if (g_trace) {
+		l.Infof("trace enabled")
+	}
+	if (g_debug) {
+		l.Infof("debug enabled")
+	}
+
 	if (CLI.BalanceConsistent) {
 		g_use_consistent_hashing = true
 		l.Infof("enabling balance-consistent")
@@ -1377,10 +1385,12 @@ func main() {
 	}
 
 	if (CLI.TunnelId!=0) {
-		g_use_aes = true
-		l.Infof("tunnel-id=%d",CLI.TunnelId)
-		g_client_tunnelid=CLI.TunnelId
+		g_tunnel_id=uint32(CLI.TunnelId)
+		g_tunnel_id=3000
 	}
+	
+	l.Infof("tunnel-id=%d",g_tunnel_id)
+
 	if (CLI.ConnectAddr!="") {
 		g_server_addr = CLI.ConnectAddr		
 		_,err:=netip.ParseAddrPort(g_server_addr)
@@ -1449,13 +1459,13 @@ func main() {
 			g_run_client=true
 			l.Infof("ratbond client connect-addr: %s",g_server_addr)
 			go http_serve()
-			run_client()
+			run_client(g_tunnel_id)
 		}
 		case "server" : {
 			g_run_server=true
 			l.Infof("ratbond server listen-addr: %s",g_listen_addr)
 			go http_serve()
-			run_server()
+			run_server(g_tunnel_id)
 		}
 		default: {
 			panic(ctx.Command())
