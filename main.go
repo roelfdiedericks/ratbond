@@ -829,8 +829,8 @@ func setClientConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 	MTU:=g_kcp_mtu
-	SndWnd:=256
-	RcvWnd:=256
+	SndWnd:=4096
+	RcvWnd:=4096
 	AckNodelay:=false //this is more speedy
 	conn.SetStreamMode(true)
 	conn.SetWriteDelay(false)
@@ -845,8 +845,8 @@ func setServerConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 	MTU:=g_kcp_mtu
-	SndWnd:=256
-	RcvWnd:=256
+	SndWnd:=4096
+	RcvWnd:=4096
 	AckNodelay:=false //this is more speedy
 	conn.SetStreamMode(true)
 	conn.SetWriteDelay(false)
