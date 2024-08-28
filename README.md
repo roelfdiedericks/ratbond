@@ -49,7 +49,7 @@ server:
 ```
 client:
 ``` 
-./ratbond client ---connect-addr=1.1.1.1:12345
+./ratbond client --connect-addr=1.1.1.1:12345
 ```
 
 
