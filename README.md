@@ -9,7 +9,7 @@ ratbond connects Linux TUN interfaces to each other using the [KCP protocol](htt
 
 ratbond operates in either server mode (typically hosted on a VPS), or client mode (typically run on an embedded router or other device with WAN links).
 
-A configurable point-to-point, e.g. 10.10.10.0/30 IP address is used to define the IP address for the tun interface on client and server. ratbond will automatically the first available IP in the subnet to the server and another to the client.
+A configurable point-to-point, e.g. 10.10.10.0/30 IP address is used to define the IP address for the tun interface on client and server. ratbond will automatically use the first available IP in the subnet for the server and the second at the client.
 
 ratbond binds the KCP connection of each WAN link on the client to the IP address of the WAN link so that the source of the KCP packets is each individual link. 
 This does require configuring some [policy routing](#policyrouting) on the client to ensure that packets from the WAN ip is only sent via the WAN links' default gateway
