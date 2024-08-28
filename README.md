@@ -9,7 +9,7 @@ ratbond connects Linux TUN interfaces to each other using the KCP protocol over 
 
 ratbond operates in either server mode (typically hosted on a VPS), or client mode (typically run on an embedded router or other device with WAN links).
 
-A configurable point-to-point, e.g. 10.10.10.0/30 IP address is used to define the IP address for the tun interface on client and server. ratbond will automatically assign an IP to server and one to the client.
+A configurable point-to-point, e.g. 10.10.10.0/30 IP address is used to define the IP address for the tun interface on client and server. ratbond will automatically assign an IP to the server and another to the client.
 
 ratbond binds the KCP connection of each WAN link on the client to the IP address of the WAN link so that the source of the KCP packets is each individual link. 
 This does require configuring some [policy routing](#policyrouting) on the client to ensure that packets from the WAN ip is only sent via the WAN links' default gateway
@@ -20,6 +20,15 @@ The overheads of a ratbond tunnel is around 15% of the link capacity.
 
 ratbond uses netlink [linkstate](#linkstate) monitoring to dynamically add or remove WAN members from the bond.
 
+ratbond also includes a builtin [httpserver](#httpserver) that serves HTTP requests (by default on 0.0.0.0:8091) to provide tunnel status information.
+
+At the moment, there is a single server, to single client relationship, to run multiple instances, a different port has to be used for every new instance.
+
+Packets may be [scheduled](#packetscheduling) using a consistent hashing algorithm or round-robin scheduling. 
+
+## Current Status
+This thing works for me, in my lab environment. With consistent hashing, and a multi-threaded iperf test ```iperf3 -P 6 -R -c 10.10.10.2 -t 600``` I can pretty much saturate two assymetric fibre connections, and achieve combined throughput minus 15% of the combined capacity (overhead), with a script that flaps each of my test WAN links randomly, with sub-second link state detection.
+
 ## Building
 - golang version 1.23.0 or above is recommended.
 - ratbond uses golang vendoring (for the simple reason to avoid conflicts with other go programs)
@@ -29,6 +38,32 @@ ratbond uses netlink [linkstate](#linkstate) monitoring to dynamically add or re
     ./buildit.sh  #will produce binaries
 ```
 - binaries are produced for x86, arm64, mipsle, and mipsbe 
+
+
+## Running
+Trivial run, using defaults. This will create a tun660 interface, connecting to the default server running on 154.0.6.97:12345, with 10.10.10.0/30 used as the configured tunnel CIDR.
+
+server:
+``` 
+./ratbond server
+```
+client:
+``` 
+./ratbond client
+```
+
+
+### Advanced usage
+Specifying AES encryption and secret key, tun interface id, tunnel address, and server address
+
+server, listening on port 5432, tun990 device created and 10.10.10.40/30 used to assign address to client/server
+``` 
+./ratbond server --aes --secret=verysecret --tunnel-id=990 --listen-addr=0.0.0.0:5432 --tunnel-ip=10.10.10.40/30
+```
+client, connecting to 1.1.1.1:5432, tun990 device created and 10.10.10.40/30 used to assign address to client/server
+``` 
+./ratbond client --aes --secret=verysecret --tunnel-id=990 --connect-addr=1.1.1.1:5432 --tunnel-ip=10.10.10.40/30
+```
 
 ## <a name="policyrouting"></a> Policy Routing is REQUIRED
 Policy routing on each WAN interface is required in order to ensure that ratbond packets sent out a specific WAN interface only uses the WAN interface's default route.
@@ -78,3 +113,36 @@ When ratbond starts up, it scans the routing table ands adds detected "WAN" link
 ratbond uses netlink routing table and interface table monitoring to detect when links are up or down. When a link goes down (interface down event), or a default route on a WAN interface disappears (route down event), ratbond removes the interface as a bonding member.
 
 When the link is restored, and a default route becomes available again the link is added back again into the bond
+
+In addition to netlink-based link state/route detection, the client and server exchanges HELLO messages every two seconds, and if no HELLO's are received for 10 seconds, a bonded WAN member is considered dead. In addition, when a client detects a WAN link as down, it will immediately send a LINKDOWN message to the server over the remaining WAN links. 
+
+The combined link state detection mechanisms allows for sub-second link state detection with 10 seconds being the worst case.
+
+## <a name="packetscheduling"></a>Packet Scheduling
+ratbond can make use of a round-robin, or consistent (hashed) packet scheduling for balancing packets accross all the bonded WAN members.
+
+The scheduling mechanism can be selected with the  ```--balance-consistent``` (default) flag, ```--balance-roundrobin```
+
+Scheduling mechanisms can be mixed (at your own peril) on the server/client side.
+
+### Consistent hashing
+TCP packets are hashed based on their source port on the client, and their destination port on the server. Non-TCP packets are hashed based on the IP source/destination
+Consistent hashing will not load balance accross all links unless there is enough connections/traffic to make the hashing select other bond members. It will however allow single TCP sessions to use a consistent path, which helps with packet reordering and throughput. 
+
+Consistent hashing is the default, and recommended mode.
+
+### Round-robin scheduling
+Packets will simply be round-robin sent via each member of a bonded connection.
+
+
+
+## <a name="httpserver"></a>HTTP Server
+ratbond makes available a single status page, served via HTTP by default on port 8091. You can simply visit http://server.ip:8091/status or http://client.ip:8091/status to see some statistics that ratbond normally outputs to it's log. This can be used by management applications. The output is still a bit text-y but will be json-formatted in future.
+
+The http server can be disabled with the ```--http-listen-addr=disable``` flag, or an alternative ip:port can be specified such as ```--http-listen-addr=127.0.0.1:9999```
+
+
+## Feedback and issues
+This code is early beta, but has been fairly battle tested in my lab setup. Occasional crashes are possible.
+
+Please raise issues on the github issues page, or fork the project and send a Pull Request.
