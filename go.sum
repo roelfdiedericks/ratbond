@@ -64,6 +64,8 @@ github.com/prometheus-community/pro-bing v0.4.1/go.mod h1:aLsw+zqCaDoa2RLVVSX3+U
 github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
 github.com/roelfdiedericks/kcp-go v0.0.0-20240819122244-da7b321d9ee0 h1:MaJ61QC4vnt4B9kaLcGZ3L3JU3T1lScDvFs3rqGd7pA=
 github.com/roelfdiedericks/kcp-go v0.0.0-20240819122244-da7b321d9ee0/go.mod h1:lSHcV3QYwXtITsTumNOf//fsRkS+rDCFmQl7jvaGYGE=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240827161550-9a47656f73f9 h1:dyJ79eGi9Y3K2xmdZl6nlTdRpSzDNy0WgzvGfg3QfKE=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240827161550-9a47656f73f9/go.mod h1:lSHcV3QYwXtITsTumNOf//fsRkS+rDCFmQl7jvaGYGE=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 h1:TG/diQgUe0pntT/2D9tmUCz4VNwm9MfrtPr0SU2qSX8=

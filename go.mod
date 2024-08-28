@@ -1,13 +1,15 @@
-module ratbond
+module github.com/roelfdiedericks/ratbond
 
 go 1.23.0
 
 require (
 	github.com/alecthomas/kong v0.9.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
+	github.com/ilyaigpetrov/parse-tcp-go v0.0.0-20180112132713-764a4d98cf89
+	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/pro-bing v0.4.1
-	github.com/roelfdiedericks/kcp-go v0.0.0-20240819122244-da7b321d9ee0
+	github.com/roelfdiedericks/kcp-go v0.0.0-20240827161550-9a47656f73f9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.2.1
@@ -22,10 +24,8 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/ilyaigpetrov/parse-tcp-go v0.0.0-20180112132713-764a4d98cf89 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/klauspost/reedsolomon v1.12.3 // indirect
-	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	github.com/templexxx/xorsimd v0.4.3 // indirect

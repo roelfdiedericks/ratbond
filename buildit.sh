@@ -1,5 +1,7 @@
 #!/bin/sh
 #possible targets: "go tool dist list"
+go mod vendor
+
 export CGO_ENABLED=0
 
 echo "building mipsle binary"
