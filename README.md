@@ -9,7 +9,7 @@ ratbond connects Linux TUN interfaces to each other using the [KCP protocol](htt
 
 ratbond operates in either server mode (typically hosted on a VPS), or client mode (typically run on an embedded router or other device with WAN links).
 
-A configurable point-to-point, e.g. 10.10.10.0/30 IP address is used to define the IP address for the tun interface on client and server. ratbond will automatically assign an IP to the server and another to the client.
+A configurable point-to-point, e.g. 10.10.10.0/30 IP address is used to define the IP address for the tun interface on client and server. ratbond will automatically the first available IP in the subnet to the server and another to the client.
 
 ratbond binds the KCP connection of each WAN link on the client to the IP address of the WAN link so that the source of the KCP packets is each individual link. 
 This does require configuring some [policy routing](#policyrouting) on the client to ensure that packets from the WAN ip is only sent via the WAN links' default gateway
@@ -18,13 +18,15 @@ KCP connections can optionally be encrypted using the AES cipher, and a pre-shar
 
 The overheads of a ratbond tunnel is around 15% of the link capacity.
 
-ratbond uses netlink [linkstate](#linkstate) monitoring to dynamically add or remove WAN members from the bond.
+ratbond uses Linux netlink [linkstate](#linkstate) monitoring to dynamically add or remove WAN members from the bond.
 
 ratbond also includes a builtin [httpserver](#httpserver) that serves HTTP requests (by default on 0.0.0.0:8091) to provide tunnel status information.
 
 At the moment, there is a single server, to single client relationship, to run multiple instances, a different port has to be used for every new instance.
 
 Packets may be [scheduled](#packetscheduling) using a consistent hashing algorithm or round-robin scheduling. 
+
+After tunnel establishment, the server creates a tun interface, and may choose to [NAT](#routingandnat)  packets. The client automatically creates a default [route](#routingandnat) via the tunnel.
 
 ## Current Status
 This thing works for me, in my lab environment. With consistent hashing, and a multi-threaded iperf test ```iperf3 -P 6 -R -c 10.10.10.2 -t 600``` I can pretty much saturate two assymetric fibre connections, and achieve combined throughput minus 15% of the combined capacity (overhead), with a script that flaps each of my test WAN links randomly, with sub-second link state detection.
@@ -109,6 +111,14 @@ Your routing table should then only show your directly attached LAN routes, and 
 ip route
 192.168.99.0/24 dev eth0 proto kernel scope link src 192.168.99.14
 ```
+## <a name="routingandnat"></a>Routing and NAT
+Once a bonded connection is "up" (initiated by the client), a tunnel interface is created on the server. The tunnel interface does not exist on the server until a client has connected.
+### Server
+The server will have to implement MASQUERADING or NAT rules in order to let the traffic leaving the server be able to reach the internet. This is an excercise for the reader.
+
+### Clients
+ratbond will add an automatic default route via the servers' tunnel IP address, and the client should start routing traffic through it. 
+
 ## <a name="linkstate"></a>WAN Links
 Any interface with a default route, that is not in the "main" linux routing table (table 254) is considered a "WAN" link. In future some filtering/specific definitions of WAN links will be implemented, but for now any link with default route in it's own unique routing table is considered "WAN".
 
