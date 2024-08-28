@@ -895,7 +895,7 @@ func ExtractDst(frame *[]byte,frame_len int) string {
 		}
 	}	
 	//l.Tracef("other dst:%s",header.Dst)
-	return fmt.Sprintf("%s",header.Dst)
+	return fmt.Sprintf("%s:%s",header.Dst,header.Src)
 }
 
 func ExtractSrc(frame *[]byte, frame_len int) string {
@@ -933,7 +933,7 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 		}
 	}	
 	//l.Tracef("other src:%s",header.Src)
-	return fmt.Sprintf("%s",header.Src)
+	return fmt.Sprintf("%s:%s",header.Src,header.Dst)
 }
 
 
