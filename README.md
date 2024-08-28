@@ -16,7 +16,7 @@ This does require configuring some [policy routing](#policyrouting) on the clien
 
 KCP connections can optionally be encrypted using the AES cipher, and a pre-shared key.
 
-The overheads of a ratbond tunnel is around 15% of the link capacity.
+The overheads of a ratbond tunnel is around 15-20% of the link capacity.
 
 ratbond uses Linux netlink [linkstate](#linkstate) monitoring to dynamically add or remove WAN members from the bond.
 
@@ -29,7 +29,7 @@ Packets may be [scheduled](#packetscheduling) using a consistent hashing algorit
 After tunnel establishment, the server creates a tun interface, and may choose to [NAT](#routingandnat)  packets. The client automatically creates a default [route](#routingandnat) via the tunnel.
 
 ## Current Status
-This thing works for me, in my lab environment. With consistent hashing, and a multi-threaded iperf test ```iperf3 -P 6 -R -c 10.10.10.2 -t 600``` I can pretty much saturate two assymetric fibre connections, and achieve combined throughput minus 15% of the combined capacity (overhead), with a script that flaps each of my test WAN links randomly, with sub-second link state detection.
+This thing works for me, in my lab environment. With consistent hashing, and a multi-threaded iperf test ```iperf3 -P 6 -R -c 10.10.10.2 -t 600``` I can pretty much saturate two assymetric fibre connections, and achieve combined throughput minus 15-20% of the combined capacity (overhead), with a script that flaps each of my test WAN links randomly, with sub-second link state detection.
 
 There is still an ugly hack, during link up/down events a KCP packet may be received on the tunXX interface, which then establishes a KCP connection over the tunXX inteface, whichs is obviously not desirable (tunnel within a tunnel). Some sort of filter needs to be applied to make sure that this doesn't happen. At the moment, a very basic check for a private IP is done, but this is not ideal.
 

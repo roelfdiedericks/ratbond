@@ -889,7 +889,7 @@ func ExtractDst(frame *[]byte,frame_len int) string {
 			l.Errorf("could not parse tcp packet")
 		} else {
 			
-			l.Debugf("tcp dstip:%s dstport:%s",packet.IP.DstIP,packet.TCP.DstPort)
+			//l.Tracef("tcp dstip:%s dstport:%s",packet.IP.DstIP,packet.TCP.DstPort)
 			return fmt.Sprintf("%s:%s",packet.IP.DstIP,packet.TCP.DstPort)
 		}
 	}	
@@ -927,7 +927,7 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 		if err!=nil {
 			l.Errorf("could not parse tcp packet")
 		} else {
-			l.Tracef("tcp dstip:%s dstport:%s",packet.IP.SrcIP,packet.TCP.SrcPort)
+			//l.Tracef("tcp dstip:%s dstport:%s",packet.IP.SrcIP,packet.TCP.SrcPort)
 			return fmt.Sprintf("%s:%s",packet.IP.SrcIP,packet.TCP.SrcPort)
 		}
 	}	
@@ -1139,7 +1139,6 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 	}	
 	client.mu.Unlock()
 
-	//l.Warnf("AFTER DELETE:g_client_list: %+v",g_client_list)
 	l.Infof("AFTER DELETE: g_client_list: \n%s",printClientList(g_client_list))
 }
 
@@ -1186,7 +1185,7 @@ func server_choose_kcp_conn(packet *[]byte,packet_len int,client *clientType) (u
 		client.consistent.Inc(owner)	
 		client.consistent.Done(owner)
 		u32, err := strconv.ParseUint(owner, 10, 32)
-		l.Debugf("consistent: dst=%s, owner=%d",dst,u32)
+		//l.Debugf("consistent: dst=%s, owner=%d",dst,u32)
 		return uint32(u32),err
 	}
 	
@@ -1196,13 +1195,13 @@ func server_choose_kcp_conn(packet *[]byte,packet_len int,client *clientType) (u
 		//fmt.Println(key, value)
 		if convid!=client.last_convid && client_kcp.alive {
 			client.last_convid=convid
-			l.Tracef("chose convid:%d",convid)
+			//l.Tracef("chose convid:%d",convid)
 			return convid,nil
 		}
 		some_convid=convid
 	}
 	//if all else fails, return some or the other convid
-	l.Tracef("default chose convid:%d",some_convid)
+	//l.Tracef("default chose convid:%d",some_convid)
 	client.last_convid=some_convid
 	return some_convid,nil
 }
