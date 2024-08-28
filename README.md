@@ -68,6 +68,8 @@ client, connecting to 1.1.1.1:5432, tun990 device created and 10.10.10.40/30 use
 ## KCP Protocol
 I chose the KCP protocol for this experiment, because it is a resilient, ordered, error-checked protocol with optional encryption and FEC (Forward Error Correction). I'm using KCP in the "turbo" mode configuration, but I've only really tweaked the KCP config values for maximum throughput whilst still having reliable, ordered streams. I haven't heavily performance tested the AES encryption, but it seemed to have little impact on my x86 testing.
 
+I also chose KCP as a tunnelling protocol, because all KCP packets are equal and delivered (hopefully) in-order. This allows for VOIP conversations and other UDP oriented packets to still operate on a busy WAN link without packet loss and in the correct order. This should improve VOIP and UDP application responsiveness and reduce dropouts.
+
 ## <a name="policyrouting"></a> Policy Routing is REQUIRED
 Policy routing on each WAN interface is required in order to ensure that ratbond packets sent out a specific WAN interface only uses the WAN interface's default route.
 
