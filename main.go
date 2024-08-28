@@ -304,6 +304,7 @@ func client_disconnect_session_by_ifname(tunnelid uint32, ifname string) {
 	server,ok := g_server_list[tunnelid]
 	if !ok || server==nil {
 		l.Errorf("cannot disconnect from tunnelid:%d - no such server connection/tunnel",tunnelid)
+		l.Infof("g_server_list: \n%s",printServerList(g_server_list))
 		return
 	}
 
@@ -829,8 +830,8 @@ func setClientConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 	MTU:=g_kcp_mtu
-	SndWnd:=4096
-	RcvWnd:=4096
+	SndWnd:=1024
+	RcvWnd:=1024
 	AckNodelay:=false //this is more speedy
 	conn.SetStreamMode(true)
 	conn.SetWriteDelay(false)
@@ -845,8 +846,8 @@ func setServerConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 	MTU:=g_kcp_mtu
-	SndWnd:=4096
-	RcvWnd:=4096
+	SndWnd:=1024
+	RcvWnd:=1024
 	AckNodelay:=false //this is more speedy
 	conn.SetStreamMode(true)
 	conn.SetWriteDelay(false)
@@ -1142,6 +1143,7 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 	client,ok := g_client_list[tunnelid]
 	if !ok || client==nil {
 		l.Errorf("cannot disconnect tunnelid:%d convid:%d- no such client connection/tunnel",tunnelid,disc_convid)
+		
 		return
 	}
 
