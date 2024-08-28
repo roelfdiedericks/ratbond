@@ -1345,7 +1345,7 @@ func main() {
 	ctx := kong.Parse(&CLI)
 	
 
-	g_tunnel_id=3000
+	
 
 	if (CLI.Debug) {
 		g_debug = true
@@ -1386,7 +1386,6 @@ func main() {
 
 	if (CLI.TunnelId!=0) {
 		g_tunnel_id=uint32(CLI.TunnelId)
-		g_tunnel_id=3000
 	}
 	
 	l.Infof("tunnel-id=%d",g_tunnel_id)
