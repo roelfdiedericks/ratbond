@@ -49,7 +49,7 @@ var g_secret="ratbond"
 var g_use_aes=false
 
 const g_write_deadline=200
-
+const g_max_hello=10
 
 var g_kcp_mtu int=1450
 var g_tunnel_mtu=g_kcp_mtu-50
@@ -442,8 +442,8 @@ func run_client(tunnelid uint32) {
 			//mqtt_check_brokers()
 		}
 		
-		//send ping to each server kcp every 5 seconds
-		if loopcount%500 == 0 {
+		//send ping to each server kcp every 2 seconds
+		if loopcount%200 == 0 {
 			client_send_server_pings()
 		}
 
@@ -514,8 +514,8 @@ func run_server(tunnelid uint32) {
 			//mqtt_check_brokers()
 		}
 
-		//send ping to each client kcp every 5 seconds
-		if loopcount%500 == 0 {
+		//send ping to each client kcp every 2 seconds
+		if loopcount%200 == 0 {
 			server_send_client_pings()
 		}
 
@@ -678,8 +678,8 @@ func client_send_server_pings() {
 			t1 := time.Now()
 			diff := t1.Sub(connection.last_hello).Seconds()
 			l.Infof("convid:%d hello age:%.2f",convid,diff)
-			//if last hello >10 seconds kill the session
-			if (diff>10) {
+			//if last hello >g_max_hello seconds kill the session
+			if (diff>g_max_hello) {
 				server_disconnect_session_by_convid(server.base_convid,connection.convid,"HELLO timeout")
 			}
 		}
@@ -1161,8 +1161,8 @@ func server_send_client_pings() {
 			t1 := time.Now()
 			diff := t1.Sub(connection.last_hello).Seconds()
 			l.Infof("convid:%d hello age:%.2f",convid,diff)
-			//if last hello >10seconds kill the session
-			if (diff>10) {
+			//if last hello >g_max_hello  kill the session
+			if (diff>g_max_hello) {
 				server_disconnect_session_by_convid(client.base_convid,connection.convid,"HELLO timeout")
 			}			
 		}
