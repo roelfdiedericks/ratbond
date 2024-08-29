@@ -3,6 +3,7 @@ import (
 	"github.com/roelfdiedericks/kcp-go"
 	"net"
 	"time"
+	"errors"
 	"golang.org/x/crypto/pbkdf2"
 	"crypto/sha1"
 )
@@ -53,16 +54,25 @@ func NewSession(convid uint32, l_udpaddr *net.UDPAddr,l_conn *net.UDPConn) (*Rat
 // Read implements net.Conn
 func (s *RatSession) Read(b []byte) (n int, err error) {
 	//s.kcp.SetReadDeadline(time.Now().Add(time.Millisecond*2000))
+	if s==nil {
+		return 0,errors.New("nil session")
+	}
 	return s.kcp.Read(b)
 }
 
 // Write implements net.Conn
 func (s *RatSession) Write(b []byte) (n int, err error) { 
 	//s.kcp.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline))
+	if s==nil {
+		return 0,errors.New("nil session")
+	}
 	return s.kcp.Write(b)
 }
 
 func (s *RatSession) Close() error {
+	if s==nil {
+		return errors.New("nil session")
+	}
 	if (s.udp_conn!=nil) {
 		s.udp_conn.Close()
 	}
@@ -70,25 +80,40 @@ func (s *RatSession) Close() error {
 }
 	
 func (s *RatSession) GetState() uint32 { 
+	if s==nil {
+		return 0
+	}
 	return s.kcp.GetState() 
 }
 
 
 func (s *RatSession) SetReadBuffer(bytes int) error {
+	if s==nil {
+		return errors.New("nil session")
+	}
 	return s.kcp.SetReadBuffer(bytes)
 }
 
 func (s *RatSession) SetWriteBuffer(bytes int) error {
+	if s==nil {
+		return errors.New("nil session")
+	}
 	return s.kcp.SetWriteBuffer(bytes)
 }
 
 
 // SetReadDeadline implements the Conn SetReadDeadline method.
 func (s *RatSession) SetReadDeadline(t time.Time) error {
+	if s==nil {
+		return errors.New("nil session")
+	}
 	return s.kcp.SetReadDeadline(t)
 }
 // SetWriteDeadline implements the Conn SetWriteDeadline method.
 func (s *RatSession) SetWriteDeadline(t time.Time) error {
+	if s==nil {
+		return errors.New("nil session")
+	}
 	return s.kcp.SetWriteDeadline(t)
 }
 
