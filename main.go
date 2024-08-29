@@ -50,7 +50,7 @@ var g_secret="ratbond"
 var g_use_aes=false
 
 const g_write_deadline=200
-const g_max_hello=10
+const g_max_hello=30
 
 var g_kcp_mtu int=1450
 var g_tunnel_mtu=g_kcp_mtu-50
