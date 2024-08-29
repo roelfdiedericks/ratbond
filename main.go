@@ -690,7 +690,7 @@ func client_send_server_pings() {
 			l.Debugf("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello seconds kill the session
 			if (diff>g_max_hello) {
-				server_disconnect_session_by_convid(server.base_convid,connection.convid,"HELLO timeout")
+				client_disconnect_session_by_convid(server.base_convid,connection.convid,"HELLO timeout")
 			}
 		}
 		
