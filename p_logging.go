@@ -86,42 +86,44 @@ func init_logging() {
 		},
 	})
 
-	syslogWriter, _ := syslog.New(syslog.LOG_INFO, "petrus")
-	l.AddHook(&FormatterHook{ // Send logs with level higher than info to stderr
-		Writer: syslogWriter,
-		LogLevels: []logrus.Level{
-			logrus.PanicLevel,
-			logrus.FatalLevel,
-			logrus.ErrorLevel,
-			logrus.WarnLevel,
-			logrus.InfoLevel,
-		},
-		Formatter: &logrus.TextFormatter{
-			CallerPrettyfier: func(f *runtime.Frame) (string, string) {
-				if !g_debug && !g_trace {
-					return "", ""
-				}
-				filename := path.Base(f.File)
-				filename = filename + ""
-				return fmt.Sprintf("%s()", f.Function), ""
-				//return fmt.Sprintf("%s()", f.Function), fmt.Sprintf("%s:%d", filename, f.Line)
+	if (g_use_syslog) {
+		syslogWriter, _ := syslog.New(syslog.LOG_INFO, "ratbond")
+		l.AddHook(&FormatterHook{ // Send logs with level higher than info to stderr
+			Writer: syslogWriter,
+			LogLevels: []logrus.Level{
+				logrus.PanicLevel,
+				logrus.FatalLevel,
+				logrus.ErrorLevel,
+				logrus.WarnLevel,
+				logrus.InfoLevel,
 			},
-			ForceColors:            false,
-			DisableTimestamp:       true,
-			DisableColors:          true,
-			QuoteEmptyFields:       true,
-			DisableLevelTruncation: false,
-			PadLevelText:           false,
-			FullTimestamp:          false,
-			// Customizing delimiters
-			FieldMap: logrus.FieldMap{
-				//logrus.FieldKeyTime:  "@timestamp",
-				logrus.FieldKeyLevel: "severity",
-				logrus.FieldKeyMsg:   "message",
-				logrus.FieldKeyFunc:  "caller",
+			Formatter: &logrus.TextFormatter{
+				CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+					if !g_debug && !g_trace {
+						return "", ""
+					}
+					filename := path.Base(f.File)
+					filename = filename + ""
+					return fmt.Sprintf("%s()", f.Function), ""
+					//return fmt.Sprintf("%s()", f.Function), fmt.Sprintf("%s:%d", filename, f.Line)
+				},
+				ForceColors:            false,
+				DisableTimestamp:       true,
+				DisableColors:          true,
+				QuoteEmptyFields:       true,
+				DisableLevelTruncation: false,
+				PadLevelText:           false,
+				FullTimestamp:          false,
+				// Customizing delimiters
+				FieldMap: logrus.FieldMap{
+					//logrus.FieldKeyTime:  "@timestamp",
+					logrus.FieldKeyLevel: "severity",
+					logrus.FieldKeyMsg:   "message",
+					logrus.FieldKeyFunc:  "caller",
+				},
 			},
-		},
-	})
+		})
+	}
 
 	l.SetOutput(io.Discard)
 	l.SetReportCaller(true)

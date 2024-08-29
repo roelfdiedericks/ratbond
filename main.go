@@ -33,7 +33,7 @@ import (
 //operating mode
 var g_run_client=false
 var g_run_server=false
-
+var g_use_syslog=true
 var g_debug bool = false
 var g_trace bool = false
 var g_use_consistent_hashing = true
@@ -86,6 +86,7 @@ type clientConnection struct {
 	bandwidth uint32
 	
 	last_hello time.Time
+	up_since time.Time
 	alive bool
 	src_address string
 }
@@ -126,6 +127,7 @@ type serverConnection struct {
 	bandwidth uint32
 
 	last_hello time.Time
+	up_since time.Time
 	alive bool
 	src_address string
 }
@@ -251,6 +253,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	//init the struct
 	server_connection.bandwidth=10; server_connection.rxloss=0; server_connection.txloss=0; server_connection.alive=true; 
 	server_connection.last_hello=time.Now()
+	server_connection.up_since=time.Now()
 	server_connection.txcounter=0
 	server_connection.rxcounter=0
 	server_connection.rxtimeouts=0
@@ -1005,8 +1008,9 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 	connection.session.convid=kcp_conn.GetConv()
 	connection.session.kcp=kcp_conn
 
-	connection.bandwidth=10; connection.rxloss=0; connection.txloss=0; connection.alive=true; 
+	connection.bandwidth=11; connection.rxloss=0; connection.txloss=0; connection.alive=true; 
 	connection.last_hello=time.Now()
+	connection.up_since=time.Now()
 	connection.txcounter=0
 	connection.rxcounter=0
 	connection.rxtimeouts=0
@@ -1345,6 +1349,7 @@ func WritePacket(frame []byte) {
 var CLI struct {
 	Debug     bool `help:"Enable debug."`
 	Trace     bool `help:"Enable tracing."`
+	Nosyslog    bool `help:"Disable syslog. (default is to use syslog)"`
 	Secret    string `help:"Secret AES key. (default:ratbond)"`
 	Aes       bool `help:"Enable AES encryption."`
 	BalanceConsistent bool `help:"Use consistent hashing packet scheduler (default)" default:"1"`
@@ -1380,6 +1385,9 @@ func main() {
 		g_trace = true
 		g_debug = true
 
+	}
+	if (CLI.Nosyslog) {
+		g_use_syslog = false
 	}
 
 	init_logging()

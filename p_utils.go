@@ -128,12 +128,22 @@ func printServerConnection(k *serverConnection) (string) {
 	s+=fmt.Sprintf("txtimeouts=%d, ",k.txtimeouts)
 	s+=fmt.Sprintf("priority=%d, ",k.priority)
 	s+=fmt.Sprintf("bandwidth=%d, ",k.bandwidth)
-	s+=fmt.Sprintf("last_hello=%s, ",k.last_hello.Format("20060102-15:04:05.000"))
+	
+	ut := time.Now()
+	uptime := ut.Sub(k.up_since).Seconds()
+	s+=fmt.Sprintf("uptime=%.2f, ",uptime)
+
+	
 	t1 := time.Now()
 	diff := t1.Sub(k.last_hello).Seconds()
 	s+=fmt.Sprintf("hello_age=%.2f, ",diff)
+
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
-	s+=fmt.Sprintf("src_address=%s",k.src_address)
+	s+=fmt.Sprintf("src_address=%s, ",k.src_address)
+
+	s+=fmt.Sprintf("up_since=%s, ",k.up_since.Format("20060102-15:04:05.000"))
+	s+=fmt.Sprintf("last_hello=%s",k.last_hello.Format("20060102-15:04:05.000"))
+
 	s+=" }"
 	return s
 }
@@ -206,12 +216,22 @@ func printClientConnection(k *clientConnection) (string) {
 	s+=fmt.Sprintf("priority=%d, ",k.priority)
 	s+=fmt.Sprintf("bandwidth=%d, ",k.bandwidth)
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
-	s+=fmt.Sprintf("last_hello=%s, ",k.last_hello.Format("20060102-15:04:05.000"))
+	
+	ut := time.Now()
+	uptime := ut.Sub(k.up_since).Seconds()
+	s+=fmt.Sprintf("uptime=%.2f, ",uptime)
+
+	
 	t1 := time.Now()
 	diff := t1.Sub(k.last_hello).Seconds()
 	s+=fmt.Sprintf("hello_age=%.2f, ",diff)
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
-	s+=fmt.Sprintf("src_address=%s",k.src_address)
+	s+=fmt.Sprintf("src_address=%s, ",k.src_address)
+
+	s+=fmt.Sprintf("up_since=%s, ",k.up_since.Format("20060102-15:04:05.000"))
+	s+=fmt.Sprintf("last_hello=%s ",k.last_hello.Format("20060102-15:04:05.000"))
+
+	
 	s+=" }"
 	return s
 }
