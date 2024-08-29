@@ -42,6 +42,7 @@ var g_server_addr = "154.0.6.97:12345"
 var g_listen_addr = "0.0.0.0:12345"
 var g_buffer_size = 65535
 var g_tunnel_id uint32=660
+var g_tunnel_name=""
 var g_server_tun_ip string ="10.10.10.2"
 var g_client_tun_ip string ="10.10.10.1"
 var g_http_listen_addr = "0.0.0.0:8091"
@@ -276,7 +277,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server.consistent.Add( fmt.Sprintf("%d",avail) )
 	server.mu.Unlock()
 
-	l.Infof("g_server_list: \n%s",printServerList(g_server_list))
+	l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
 
 	//write something to the KCP to wake the other end
 	hello := []byte("\x00\x00")
@@ -304,7 +305,7 @@ func client_disconnect_session_by_ifname(tunnelid uint32, ifname string) {
 	server,ok := g_server_list[tunnelid]
 	if !ok || server==nil {
 		l.Errorf("cannot disconnect from tunnelid:%d - no such server connection/tunnel",tunnelid)
-		l.Infof("g_server_list: \n%s",printServerList(g_server_list))
+		l.Errorf("g_server_list: \n%s",printServerList(g_server_list))
 		return
 	}
 
@@ -453,7 +454,7 @@ func run_client(tunnelid uint32) {
         if loopcount%1500 == 0 {
             l.Tracef("loop:%d, housekeeping", loopcount)
             loopcount = 1
-			l.Infof("g_server_list: \n%s",printServerList(g_server_list))
+			l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
 			l.Debugf("loads: \n %s",printServerLoads(g_server_list))
 			
 
@@ -526,7 +527,7 @@ func run_server(tunnelid uint32) {
 		if loopcount%1500 == 0 {
             l.Tracef("loop:%d, housekeeping", loopcount)
 			//l.Warnf("g_client_list: %+v",g_client_list)
-			l.Infof("g_client_list: \n%s",printClientList(g_client_list))
+			l.Debugf("g_client_list: \n%s",printClientList(g_client_list))
 			l.Debugf("loads: \n %s",printClientLoads(g_client_list))
             loopcount = 1
         }
@@ -583,7 +584,11 @@ func createTun(tunnelid uint32, ip string) (*water.Interface, error) {
 			},
 	}
 
-	config.Name = fmt.Sprintf("tun%d",tunnelid)
+	if g_tunnel_name!="" {
+		config.Name=g_tunnel_name
+	} else {
+		config.Name = fmt.Sprintf("tun%d",tunnelid)
+	}
 
 	iface, err := water.New(config)
 	if err != nil {
@@ -627,7 +632,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 					connection.rxtimeouts++
 					continue;
 				}
-				l.Errorf("conn read error:", err)
+				l.Debugf("conn read error:", err)
 				client_disconnect_session_by_convid(server.base_convid,connection.convid,"RECV conn read error")
 
 				return
@@ -636,7 +641,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			//check for hello message
 			if n==2 && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Infof("received HELLO convid:%d",connection.convid);
+				l.Debugf("received HELLO convid:%d",connection.convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -671,7 +676,7 @@ func client_send_server_pings() {
 		for convid,connection := range server.connections {
 			hello := []byte("\x00\x00")
 			if connection.session!=nil {
-				l.Infof("sending HELLO to server convid:%d",convid)
+				l.Debugf("sending HELLO to server convid:%d",convid)
 				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
 				connection.session.Write(hello)
 			}
@@ -679,7 +684,7 @@ func client_send_server_pings() {
 			//whilst we're in there, check the hello age
 			t1 := time.Now()
 			diff := t1.Sub(connection.last_hello).Seconds()
-			l.Infof("convid:%d hello age:%.2f",convid,diff)
+			l.Debugf("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello seconds kill the session
 			if (diff>g_max_hello) {
 				server_disconnect_session_by_convid(server.base_convid,connection.convid,"HELLO timeout")
@@ -769,7 +774,7 @@ func client_handle_tun(server *serverType) {
 		connection,ok:=server.connections[chose_convid] 
 		if !ok {
 			l.Errorf("server_kcp for chose_convid:%d is not available",chose_convid);
-			l.Warnf("g_server_list: \n%s",printServerList(g_server_list))
+			l.Errorf("g_server_list: \n%s",printServerList(g_server_list))
 			continue
 		}	
 		
@@ -1037,7 +1042,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 	client.mu.Unlock()
 
 	//l.Warnf("g_client_list: %+v",g_client_list)
-	l.Infof("after accept: g_client_list: \n%s",printClientList(g_client_list))
+	l.Debugf("after accept: g_client_list: \n%s",printClientList(g_client_list))
 
 
 	
@@ -1077,7 +1082,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 					connection.rxtimeouts++
 					continue;
 				}
-				l.Errorf("conn read error:%s", err)
+				l.Debugf("conn read error:%s", err)
 				//close the client connection
 				server_disconnect_session_by_convid(tunnelid,convid,"KCP Conn Read Error")
 				return
@@ -1088,7 +1093,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			//check for hello message
 			if n==2 && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Infof("received HELLO convid:%d",convid);
+				l.Debugf("received HELLO convid:%d",convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -1159,7 +1164,7 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 	}	
 	client.mu.Unlock()
 
-	l.Infof("AFTER DELETE: g_client_list: \n%s",printClientList(g_client_list))
+	l.Debugf("AFTER DELETE: g_client_list: \n%s",printClientList(g_client_list))
 }
 
 
@@ -1171,7 +1176,7 @@ func server_send_client_pings() {
 		for convid,connection := range client.connections {
 			hello := []byte("\x00\x00")
 			if connection.session!=nil {
-				l.Infof("sending HELLO to client convid:%d",convid)
+				l.Debugf("sending HELLO to client convid:%d",convid)
 				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
 				connection.session.Write(hello)
 			}
@@ -1179,7 +1184,7 @@ func server_send_client_pings() {
 			//whilst we're in there, check the hello age
 			t1 := time.Now()
 			diff := t1.Sub(connection.last_hello).Seconds()
-			l.Infof("convid:%d hello age:%.2f",convid,diff)
+			l.Debugf("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello  kill the session
 			if (diff>g_max_hello) {
 				server_disconnect_session_by_convid(client.base_convid,connection.convid,"HELLO timeout")
@@ -1346,7 +1351,8 @@ var CLI struct {
 	BalanceRoundrobin bool `help:"Use round robin packet scheduler."`
 	ConnectAddr string `help:"connect to server address:port (default:154.0.6.97:12345)"`
 	ListenAddr   string `help:"bind server to listen on address:port (default:0.0.0.0:12345)"`
-	TunnelId     uint32 `help:"tunnelid to use on client (creates e.g. tun660 interface) (default:660)" default:"0"`
+	TunnelId      uint32 `help:"tunnel-id to use between client and server, has to match on both sides (default:660)" default:"660"`
+	TunName      string `help:"name of the tun interface on the client (e.g. tun0, tun1), defaults to tun<tunnel-id>"`
 	TunnelIp     string `help:"/30 (point to point) IP address to assign on client/server tun interfaces. Has to match on both sides. (default:10.10.10.0/30)"`
 	HttpListenAddr  string `help:"bind status httpserver to listen on address:port (default:0.0.0.0:8091), set to http-listen-addr=disable to not service http requests"`
 	
@@ -1397,6 +1403,8 @@ func main() {
 		g_secret=CLI.Secret
 		l.Infof("using secret:%s","<hidden>")
 	}
+
+	
 
 	if (CLI.Aes) {
 		g_use_aes = true
@@ -1476,12 +1484,22 @@ func main() {
 			}
 			g_run_client=true
 			l.Infof("ratbond client connect-addr: %s",g_server_addr)
+			if (CLI.TunName!="") {
+				g_tunnel_name=CLI.TunName
+				l.Infof("using tun-name:%s",g_tunnel_name)
+			}
+			
 			go http_serve()
 			run_client(g_tunnel_id)
 		}
 		case "server" : {
 			g_run_server=true
 			l.Infof("ratbond server listen-addr: %s",g_listen_addr)
+
+			if (CLI.TunName!="") {				
+				l.Warnf("tun-name:%s is not used on the server, tun interface is based on tunnel-id",g_tunnel_name)
+			}
+
 			go http_serve()
 			run_server(g_tunnel_id)
 		}
