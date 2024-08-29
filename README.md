@@ -29,12 +29,12 @@ Packets may be [scheduled](#packetscheduling) using a consistent hashing algorit
 After tunnel establishment, the server creates a tun interface, and may choose to [NAT](#routingandnat)  packets. The client automatically creates a default [route](#routingandnat) via the tunnel.
 
 ## Current Status
-This thing works for me, in my lab environment. With consistent hashing, and a multi-threaded iperf test ```iperf3 -P 6 -R -c 10.10.10.2 -t 600``` I can pretty much saturate two assymetric fibre connections, and achieve combined throughput minus 15-20% of the combined capacity (overhead), with a script that flaps each of my test WAN links randomly, with sub-second link state detection.
+This thing works for me, in my lab environment. With consistent hashing, and a multi-threaded iperf test ```iperf3 -P 6 -R -c 10.10.10.2 -t 600``` I can pretty much saturate two asymmetric fibre connections, and achieve combined throughput minus 15-20% of the combined capacity (overhead), with a script that flaps each of my test WAN links randomly, with sub-second link state detection.
 
 There is still an ugly hack, during link up/down events a KCP packet may be received on the tunXX interface, which then establishes a KCP connection over the tunXX inteface, which is obviously not desirable (tunnel within a tunnel). Some sort of filter needs to be applied to make sure that this doesn't happen. At the moment, a very basic check for a private IP is done, but this is not ideal.
 
 ## Building
-- golang version 1.23.0 or above is recommended.
+- golang version 1.22 or above is recommended.
 - ratbond uses golang vendoring (for the simple reason to avoid conflicts with other go programs)
 - ratbond uses a forked version of kcp-go https://github.com/roelfdiedericks/kcp-go with some added functionality
 ```
@@ -72,6 +72,7 @@ client, connecting to 1.1.1.1:5432, name the tunnel device as tun1,  and 10.10.1
 Important! : The ```--tunnel-id``` parameter should be the same on both client and server. For reasons. For now.
 
 The ```--tun-name=``` parameter only applies to the client, on the server the tun device is always created as tun{tunnel-id}
+The ```--tunnel-ip=``` parameter can be the same on both the client and server, ratbond will automatically use the first two available IP's, one on the client, and one on the server.
 
 ## KCP Protocol
 I chose the KCP protocol for this experiment, because it is a resilient, ordered, error-checked protocol with optional encryption and FEC (Forward Error Correction). I'm using KCP in the "turbo" mode configuration, but I've only really tweaked the KCP config values for maximum throughput whilst still having reliable, ordered streams. I haven't heavily performance tested the AES encryption, but it seemed to have little impact on my amd64 testing.
