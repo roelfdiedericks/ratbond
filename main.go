@@ -195,7 +195,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 		server.iface=iface
 		server.my_tun_ip=g_client_tun_ip
 		server.remote_tun_ip=g_server_tun_ip
-		server.ifname=fmt.Sprintf("tun%d",tunnelid)
+		server.ifname=iface.Name()
 		server.base_convid=tunnelid	
 		//add default route via the tunnel
 		runthing("ip","route","add","default","via",server.remote_tun_ip)
@@ -989,7 +989,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 		client.iface=iface
 		client.my_tun_ip=g_server_tun_ip
 		client.remote_tun_ip=g_client_tun_ip
-		client.ifname=fmt.Sprintf("tun%d",tunnelid)
+		client.ifname=iface.Name()
 		client.base_convid=tunnelid	
 
 		spawn_tun=true
