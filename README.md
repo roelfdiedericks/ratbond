@@ -69,9 +69,9 @@ client, connecting to 1.1.1.1:5432, name the tunnel device as tun1,  and 10.10.1
 ./ratbond client --aes --secret=verysecret --tunnel-id=990 --tun-name=tun1 --connect-addr=1.1.1.1:5432 --tunnel-ip=10.10.10.40/30
 ```
 
-Important! : The ```--tunnel-id`` parameter should be the same on both client and server. For reasons. For now.
+Important! : The ```--tunnel-id``` parameter should be the same on both client and server. For reasons. For now.
 
-The ```--tun-name=`` parameter only applies to the client, on the server the tun device is always created as tun<tunnel-id>
+The ```--tun-name=``` parameter only applies to the client, on the server the tun device is always created as tun<tunnel-id>
 
 ## KCP Protocol
 I chose the KCP protocol for this experiment, because it is a resilient, ordered, error-checked protocol with optional encryption and FEC (Forward Error Correction). I'm using KCP in the "turbo" mode configuration, but I've only really tweaked the KCP config values for maximum throughput whilst still having reliable, ordered streams. I haven't heavily performance tested the AES encryption, but it seemed to have little impact on my x86 testing.
