@@ -33,6 +33,8 @@ This thing works for me, in my lab environment. With consistent hashing, and a m
 
 There is still an ugly hack, during link up/down events a KCP packet may be received on the tunXX interface, which then establishes a KCP connection over the tunXX inteface, which is obviously not desirable (tunnel within a tunnel). Some sort of filter needs to be applied to make sure that this doesn't happen. At the moment, a very basic check for a private IP is done, but this is not ideal.
 
+IPV6 support hasn't been tested, but should work. IPV6 won't be balanced with the "consistent" scheduling mechanism, as it only inspects IPV4 packets at the moment.
+
 ## Building
 - golang version 1.22 or above is recommended.
 - ratbond uses golang vendoring (for the simple reason to avoid conflicts with other go programs)
@@ -146,6 +148,8 @@ ratbond can make use of a round-robin, or consistent (hashed) packet scheduling 
 The scheduling mechanism can be selected with the  ```--balance-consistent``` (default) flag, ```--balance-roundrobin```
 
 Scheduling mechanisms can be mixed (at your own peril) on the server/client side.
+
+The consisten scheduling mechanism currently only examines IPV4 traffic. IPV6 traffic should work, but won't be properly balanced.
 
 ### Consistent hashing
 TCP packets are hashed based on their source port on the client, and their destination port on the server. Non-TCP packets are hashed based on the IP source/destination
