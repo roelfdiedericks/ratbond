@@ -49,6 +49,8 @@ var g_http_listen_addr = "0.0.0.0:8091"
 var g_secret="ratbond"
 var g_use_aes=false
 
+var g_mux_max=3
+
 const g_write_deadline=200
 const g_max_hello=30
 
@@ -152,18 +154,19 @@ var g_server_list =make(map[uint32] *serverType)
 
 
 
-func client_connection_by_src_exists(src string,server *serverType) (bool) {
+func client_num_connections_by_src(src string,server *serverType) (int) {
+	cnt:=0
 	for _ , server_connection := range server.connections {
 		if server_connection.src_address==src {
-			return true
+			cnt++
 		}
 	}	
-	return false
+	return cnt
 }
 
 
 func client_connect_server(tunnelid uint32, src string, ifname string, gw string) {
-	l.Debugf("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
+	l.Infof("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
 	
 
 	server,ok:=g_server_list[tunnelid]
@@ -175,9 +178,10 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 		
 	server.mu.Lock()
 
-	//see if the connection already exists
-	if client_connection_by_src_exists(src,server) {
-		l.Tracef("already have a connection with src:%s",src);
+	//check how many connections with this src exists
+	num:=client_num_connections_by_src(src,server)
+	if num>=g_mux_max {
+		l.Debugf("enough connections with src:%s, muxcount:%d",src,num);
 		server.mu.Unlock()
 		return
 	}
@@ -235,7 +239,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 			break;
 		}
 	}
-	if avail==tunnelid+10 {
+	if avail==tunnelid+100 {
 		l.Errorf("no more additional connections available for tunnel: %d",tunnelid)
 		return
 	}

@@ -66,6 +66,7 @@ func handle_route_update(update netlink.RouteUpdate, tunnelid uint32) {
 				l.Errorf("Unable to use default route, InterfaceByIndex failed:%s",err)	
 			}
 			client_connect_server(tunnelid,fmt.Sprintf("%s",update.Route.Src),rif.Name,fmt.Sprintf("%s",update.Route.Gw))
+
 		}
 	}
 	if (update.Type==unix.RTM_DELROUTE && dst=="0.0.0.0/0") {
