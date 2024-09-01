@@ -20,34 +20,25 @@ func netlink_subscribe_ifaces(tunnelid uint32) {
 
 	}
 	for update := range g_netlink_iface_updates {
-		l.Tracef("netlink ->>>>>>>>>>>>> iface:%s, state:%s", update.Link.Attrs().Name, update.Link.Attrs().OperState.String())
-		if update.Link.Attrs().OperState.String() == "up" {
-			switch update.Link.Attrs().Name {
-			case "tun0":
-			default:
-			}
+		ifname:=fmt.Sprintf("%s",update.Link.Attrs().Name)
+		if strings.Contains(ifname,"tun") {
+			l.Debugf("ignoring tun interface:%s",ifname)
+			continue
 		}
 
-		if update.Link.Attrs().OperState.String() == "down" {
-			ifname:=fmt.Sprintf("%s",update.Link.Attrs().Name)
-			if strings.Contains(ifname,"tun") {
-				l.Warnf("LINKDOWN: ignoring tun interface:%s",ifname)
-				return
-			}
+		l.Errorf("Interface iface:%s, state:%s", update.Link.Attrs().Name, update.Link.Attrs().OperState.String())
+		if update.Link.Attrs().OperState.String() == "up" {
+		}
 
+		if update.Link.Attrs().OperState.String() == "down" {	
 			client_disconnect_session_by_ifname(tunnelid,ifname)
-			switch update.Link.Attrs().Name {
-			case "tun0":
-			default:
-			}
-
 		}
 	}
 }
 
 
 func handle_route_update(update netlink.RouteUpdate, tunnelid uint32) {
-	l.Tracef("netlink ->>>>>>>>>>>>> type: %d linkindex:%d dst:%s, src:%s, gw:%s %s", update.Type, update.Route.LinkIndex, update.Route.Dst,update.Route.Src,update.Route.Gw,update.Route)
+	l.Debugf("netlink ->>>>>>>>>>>>> type: %d linkindex:%d dst:%s, src:%s, gw:%s %s", update.Type, update.Route.LinkIndex, update.Route.Dst,update.Route.Src,update.Route.Gw,update.Route)
 
 	//we're only interested in default routes
 	dst:=fmt.Sprintf("%s",update.Route.Dst)
@@ -65,7 +56,7 @@ func handle_route_update(update netlink.RouteUpdate, tunnelid uint32) {
 			if (err!=nil) {
 				l.Errorf("Unable to use default route, InterfaceByIndex failed:%s",err)	
 			}
-			client_connect_server(tunnelid,fmt.Sprintf("%s",update.Route.Src),rif.Name,fmt.Sprintf("%s",update.Route.Gw))
+			client_connect_server(tunnelid,fmt.Sprintf("%s",update.Route.Src),rif.Name,fmt.Sprintf("%s",update.Route.Gw),"NEW DEFAULT ROUTE DETECTED")
 			
 		}
 	}

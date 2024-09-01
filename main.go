@@ -52,7 +52,7 @@ var g_use_aes=false
 var g_mux_max=1
 
 const g_write_deadline=200
-const g_max_hello=60
+const g_max_hello=10
 
 var g_kcp_mtu int=1450
 var g_tunnel_mtu=g_kcp_mtu-50
@@ -165,7 +165,7 @@ func client_num_connections_by_src(src string,server *serverType) (int) {
 }
 
 
-func client_connect_server(tunnelid uint32, src string, ifname string, gw string) {
+func client_connect_server(tunnelid uint32, src string, ifname string, gw string, reason string) {
 	
 	
 
@@ -186,7 +186,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 		return
 	}
 
-	l.Infof("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
+	l.Warnf("connecting to server (%s), base tunnelid:%d, src:%s, ifname:%s gw:%s",reason,tunnelid,src,ifname,gw)
 
 
 	
@@ -600,7 +600,7 @@ func createTun(tunnelid uint32, ip string) (*water.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.Infof("Interface Name: %s\n", iface.Name())
+	l.Debugf("Interface Name: %s\n", iface.Name())
 	runthing("ip","addr","add",ip+"/30","dev",iface.Name())
 	runthing("ip","link","set",iface.Name(),"mtu",fmt.Sprintf("%d",(g_tunnel_mtu)))
 	runthing("ip","link","set",iface.Name(),"up")
@@ -693,7 +693,7 @@ func client_send_server_pings() {
 			l.Debugf("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello seconds kill the session
 			if (diff>g_max_hello) {
-				client_disconnect_session_by_convid(server.base_convid,connection.convid,"HELLO timeout")
+				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
 			}
 		}
 		
@@ -718,7 +718,7 @@ func client_choose_kcp_conn(packet *[]byte, packet_len int, server *serverType) 
 		server.consistent.Inc(owner)	
 		server.consistent.Done(owner)
 		u32, err := strconv.ParseUint(owner, 10, 32)
-		l.Debugf("consistent: dst=%s, owner=%d",dst,u32)
+		l.Tracef("consistent: dst=%s, owner=%d",dst,u32)
 		return uint32(u32),err
 	}
 	
@@ -1194,7 +1194,7 @@ func server_send_client_pings() {
 			l.Debugf("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello  kill the session
 			if (diff>g_max_hello) {
-				server_disconnect_session_by_convid(client.base_convid,connection.convid,"HELLO timeout")
+				server_disconnect_session_by_convid(client.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
 			}			
 		}
 		

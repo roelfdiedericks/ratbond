@@ -12,7 +12,7 @@ type AsyncExecData struct {
 }
 
 func runthing(thing string, arg ...string) string {
-	l.Infof("running thing: %s, %v", thing, arg)
+	l.Debugf("running thing: %s, %v", thing, arg)
 	cmd := exec.Command(thing, arg...)
 
 	stdin, err := cmd.StdinPipe()
@@ -30,7 +30,7 @@ func runthing(thing string, arg ...string) string {
 		return "error"
 	}
 
-	l.Infof("runthingoutput:\n%s\n", out)
+	l.Debugf("runthingoutput:\n%s\n", out)
 	return string(out)
 }
 
