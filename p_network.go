@@ -155,3 +155,13 @@ func network_get_mac() {
 	}
 	l.Debugf("My mac address:%s", g_mac)
 }
+
+
+func network_sysctls () {
+	//set a few sysctls to increase send/receive buffer sizes
+	runthing("sysctl","net.core.rmem_max=26214400")
+	runthing("sysctl","net.core.rmem_default=26214400")
+	runthing("sysctl","net.core.wmem_max=26214400")
+	runthing("sysctl","net.core.wmem_default=26214400")
+	runthing("sysctl","net.core.netdev_max_backlog=2048")
+}

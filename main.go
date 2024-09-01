@@ -49,10 +49,10 @@ var g_http_listen_addr = "0.0.0.0:8091"
 var g_secret="ratbond"
 var g_use_aes=false
 
-var g_mux_max=3
+var g_mux_max=1
 
 const g_write_deadline=200
-const g_max_hello=30
+const g_max_hello=60
 
 var g_kcp_mtu int=1450
 var g_tunnel_mtu=g_kcp_mtu-50
@@ -166,7 +166,7 @@ func client_num_connections_by_src(src string,server *serverType) (int) {
 
 
 func client_connect_server(tunnelid uint32, src string, ifname string, gw string) {
-	l.Infof("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
+	
 	
 
 	server,ok:=g_server_list[tunnelid]
@@ -186,7 +186,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 		return
 	}
 
-	
+	l.Infof("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
 
 
 	
@@ -228,8 +228,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	
 
 
-	l.Infof("connecting to server, base tunnelid:%d, src:%s, ifname:%s gw:%s",tunnelid,src,ifname,gw)
-
+	
 	//find an open slot 0-9 on the base tunnelid, and start a connection
 	var avail uint32
 	for avail=tunnelid; avail<=tunnelid+10; avail++ {
@@ -1363,6 +1362,7 @@ var CLI struct {
 	TunnelId      uint32 `help:"tunnel-id to use between client and server, has to match on both sides (default:660)" default:"660"`
 	TunName      string `help:"name of the tun interface on the client (e.g. tun0, tun1), defaults to tun<tunnel-id>"`
 	TunnelIp     string `help:"/30 (point to point) IP address to assign on client/server tun interfaces. Has to match on both sides. (default:10.10.10.0/30)"`
+	Mux      uint32 `help:"multiplex (n) number of KCP session on an interface (default:1)" default:"1"`
 	HttpListenAddr  string `help:"bind status httpserver to listen on address:port (default:0.0.0.0:8091), set to http-listen-addr=disable to not service http requests"`
 	
 	Client struct {
@@ -1416,7 +1416,10 @@ func main() {
 		l.Infof("using secret:%s","<hidden>")
 	}
 
-	
+	if (CLI.Mux!=1) {
+		g_mux_max=int(CLI.Mux)
+	}
+	l.Infof("max-mux: %d", g_mux_max)
 
 	if (CLI.Aes) {
 		g_use_aes = true
@@ -1486,7 +1489,7 @@ func main() {
 
 	l.Infof("main()")
 
-	
+	network_sysctls()
 
 	switch ctx.Command() {
 		case "client" :	{ 
