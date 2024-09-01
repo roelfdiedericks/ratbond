@@ -35,6 +35,8 @@ There is still an ugly hack, during link up/down events a KCP packet may be rece
 
 IPV6 support hasn't been tested, but should work. IPV6 won't be balanced with the "consistent" scheduling mechanism, as it only inspects IPV4 packets at the moment.
 
+
+
 ## Building
 - golang version 1.22 or above is recommended.
 - ratbond uses golang vendoring (for the simple reason to avoid conflicts with other go programs)
@@ -75,6 +77,9 @@ Important! : The ```--tunnel-id``` parameter should be the same on both client a
 
 The ```--tun-name=``` parameter only applies to the client, on the server the tun device is always created as tun{tunnel-id}
 The ```--tunnel-ip=``` parameter can be the same on both the client and server, ratbond will automatically use the first two available IP's, one on the client, and one on the server.
+
+The ```--mux=``` parameter can be used to force the client to create more than one KCP session to a server. Some carriers seem to throttle UDP connections, by causing packet loss above a certain packet rate, and multiple UDP connections seems to be able to bypass this limitation. Only applicable to the client.
+
 
 ## KCP Protocol
 I chose the KCP protocol for this experiment, because it is a resilient, ordered, error-checked protocol with optional encryption and FEC (Forward Error Correction). I'm using KCP in the "turbo" mode configuration, but I've only really tweaked the KCP config values for maximum throughput whilst still having reliable, ordered streams. I haven't heavily performance tested the AES encryption, but it seemed to have little impact on my amd64 testing.
