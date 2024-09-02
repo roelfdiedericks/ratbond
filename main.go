@@ -10,7 +10,7 @@ import (
 	"encoding/binary"
 	"sync"
 	"strconv"
-	"strings"
+
 
 	"github.com/pkg/errors"
 
@@ -52,14 +52,15 @@ var g_use_aes=false
 
 var g_mux_max=1
 
-const g_write_deadline=200
+const g_write_deadline=1000
 const g_max_hello=10
 
-var g_kcp_mtu int=1450
-var g_tunnel_mtu=g_kcp_mtu-40
+var g_kcp_mtu int=1420
+var g_tunnel_mtu=g_kcp_mtu-24
 
 var g_reorder_buffer_size=128
 
+var g_hello = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 
 var g_data string
 
@@ -303,9 +304,8 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
 
 	//write something to the KCP to wake the other end
-	hello := []byte("\x00\x00")
 	session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
-	session.Write(hello)
+	session.Write(g_hello)
 	go client_handle_kcp(server,server_connection)
 	if (spawn_tun) {
 		go client_handle_tun(server)
@@ -479,7 +479,7 @@ func run_client(tunnelid uint32) {
             l.Tracef("loop:%d, housekeeping", loopcount)
             loopcount = 1
 			l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
-			l.Debugf("loads: \n %s",printServerLoads(g_server_list))
+			l.Tracef("loads: \n %s",printServerLoads(g_server_list))
 			
 
 			//we poll the routing table every now and again, in case we missed or state messed us arround
@@ -552,7 +552,7 @@ func run_server(tunnelid uint32) {
             l.Tracef("loop:%d, housekeeping", loopcount)
 			//l.Warnf("g_client_list: %+v",g_client_list)
 			l.Debugf("g_client_list: \n%s",printClientList(g_client_list))
-			l.Debugf("loads: \n %s",printClientLoads(g_client_list))
+			l.Tracef("loads: \n %s",printClientLoads(g_client_list))
             loopcount = 1
         }
 
@@ -652,7 +652,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			n, err := connection.session.Read(message)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>deadline exceeded: convid:%d",connection.convid)
+					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",connection.convid)
 					connection.rxtimeouts++
 					continue;
 				}
@@ -662,16 +662,21 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 				return
 			}
 
+			connection.rxcounter++
+			connection.rxbytes+=uint64(n)
+			//we can assume if we are receiving data it's like a hello
+			connection.last_hello=time.Now()
+
 			//check for hello message
-			if n==2 && (message[0]==0 && message[1]==0) {
+			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Infof("received HELLO convid:%d",connection.convid);
+				l.Debugf("received HELLO convid:%d",connection.convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
+			
+			
 
-			connection.rxcounter++
-			connection.rxbytes+=uint64(n)
 			if server.iface != nil {
 				_, err = server.iface.Write(message[:n])
 				if err != nil {
@@ -710,12 +715,21 @@ func client_send_server_pings() {
 				continue;
 			}
 
-			//send the hellow
-			hello := []byte("\x00\x00")
+			//send the hello			
 			if connection.session!=nil {
-				l.Infof("sending HELLO to server convid:%d",convid)
-				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
-				connection.session.Write(hello)
+				l.Debugf("sending HELLO to server convid:%d",convid)
+				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*1000)) 
+				_, err:=connection.session.Write(g_hello)
+				if err != nil {
+					if (fmt.Sprintf("%s",err)=="timeout") {
+						l.Warnf("HELLO write deadline exceeded: convid:%d",connection.convid)
+						connection.txtimeouts++
+						continue;
+					}
+					l.Errorf("HELLO conn write error:", err)
+				}
+			} else {
+				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
 			}
 
 			//calculate the bandwidth
@@ -1065,7 +1079,8 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 		
 	connection.convid=convid
 	connection.src_address=fmt.Sprintf("%s",kcp_conn.RemoteAddr())
-	if strings.Contains(connection.src_address,"192.168") {
+	ip:=net.ParseIP(connection.src_address)
+	if ip.IsPrivate() {
 		l.Errorf("!!!!!!!!!!!!!!!!!cannot accept connection with private ip address: %s",kcp_conn.RemoteAddr())
 		connection=nil
 		client.mu.Unlock()
@@ -1128,7 +1143,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			n, err := kcp_conn.Read(message)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>deadline exceeded: convid:%d",convid)
+					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",convid)
 					connection.rxtimeouts++
 					continue;
 				}
@@ -1140,11 +1155,13 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 
 			connection.rxcounter++
 			connection.rxbytes+=uint64(n)
+			//we can assume if we are receiving data it's like a hello
+			connection.last_hello=time.Now()
 
 			//check for hello message
-			if n==2 && (message[0]==0 && message[1]==0) {
+			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Infof("received HELLO convid:%d",convid);
+				l.Debugf("received HELLO convid:%d",convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -1165,6 +1182,8 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 				server_disconnect_session_by_convid(tunnelid,uint32(linkdown),"RECVD Linkdown")
 				continue;
 			}
+
+			
 
 			//write the packet to the tun
 			if client.iface != nil {
@@ -1237,11 +1256,20 @@ func server_send_client_pings() {
 			}	
 
 			//send the hello
-			hello := []byte("\x00\x00")
 			if connection.session!=nil {
-				l.Infof("sending HELLO to client convid:%d",convid)
-				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
-				connection.session.Write(hello)
+				l.Debugf("sending HELLO to client convid:%d",convid)
+				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*1000)) 
+				_, err:=connection.session.Write(g_hello)
+				if err != nil {
+					if (fmt.Sprintf("%s",err)=="timeout") {
+						l.Warnf("HELLO write deadline exceeded: convid:%d",connection.convid)
+						connection.txtimeouts++
+						continue;
+					}
+					l.Errorf("HELLO conn write error:", err)
+				}
+			} else {
+				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
 			}
 
 			//calculate the bandwidth			
@@ -1311,9 +1339,9 @@ func server_handle_tun(client *clientType) {
 
 		//read the packet from the wire
 		//l.Debugf("read tun")
-		l.Debugf("Server about to read from tun:")
+		l.Tracef("Server about to read from tun:")
 		n, err := client.iface.Read(packet)
-		l.Debugf("Server finished read from tun:")
+		l.Tracef("Server finished read from tun:")
 		if err != nil {
 			l.Panicf("tun iface read error:", err)
 			//close the client connection
@@ -1360,11 +1388,11 @@ func server_handle_tun(client *clientType) {
 		
 		//and send it out the selected KCP conn
 		if err == nil {
-			l.Debugf("server write kcp: convid%d",connection.convid)
+			l.Tracef("server write kcp: convid%d",connection.convid)
 			
 			connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline))
 			_, err = connection.session.Write(packet[:n])
-			l.Debugf("server finished write kcp: convid%d",connection.convid)
+			l.Tracef("server finished write kcp: convid%d",connection.convid)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
 					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>write deadline exceeded: convid:%d",connection.convid)

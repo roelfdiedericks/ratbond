@@ -136,14 +136,14 @@ func (s *RatSession) GetConv() uint32 {
 
 func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 	if (s.kcp!=nil) {
-		NoDelay, Interval, Resend, NoCongestion := 1, 40, 2, 1 //useful mode
+		NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //useful mode
 		//NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 		//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 		MTU:=g_kcp_mtu
 		SndWnd:=2048 //2048 seems good for thruput
 		RcvWnd:=2048
 		AckNodelay:=false //this is more speedy
-		s.kcp.SetStreamMode(true) //message mode or stream mode, warrants more checking, stream mode seems faster which is interesting
+		s.kcp.SetStreamMode(false) //message mode or stream mode, warrants more checking, stream mode seems faster which is interesting
 		s.kcp.SetWriteDelay(false)
 		s.kcp.SetNoDelay(NoDelay, Interval, Resend, NoCongestion)
 		s.kcp.SetMtu(MTU)

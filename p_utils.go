@@ -120,6 +120,7 @@ func printServerConnection(k *serverConnection) (string) {
 	} else {
 		s+=fmt.Sprintf("kcp=NIL!!!")
 	}
+	s+=fmt.Sprintf("kcpstate=%d, ",k.session.kcp.GetState())
 	s+=fmt.Sprintf("udp_conn=%p, ",k.session.udp_conn)
 	s+=fmt.Sprintf("ifname=%s, ",k.ifname)
 	s+=fmt.Sprintf("txcounter=%d, ",k.txcounter)
@@ -209,6 +210,7 @@ type client_kcp struct {
 func printClientConnection(k *clientConnection) (string) {
 	s:=fmt.Sprintf("{ convid=%d, ",k.convid)
 	s+=fmt.Sprintf("kcp=%p, ",k.session.kcp)
+	s+=fmt.Sprintf("kcpstate=%d, ",k.session.kcp.GetState())
 	//s+=fmt.Sprintf("udp_conn=%p, ",k.udp_conn)
 	s+=fmt.Sprintf("txcounter=%d, ",k.txcounter)
 	s+=fmt.Sprintf("rxcounter=%d, ",k.rxcounter)

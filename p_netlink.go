@@ -94,7 +94,7 @@ func netlink_subscribe_routes(tunnelid uint32) {
 
 
 func netlink_get_routes(tunnelid uint32) {
-	l.Infof("getting routes, once-off tunnelid:%d",tunnelid)
+	l.Debugf("getting routes, once-off tunnelid:%d",tunnelid)
 	route_updates := make(chan netlink.RouteUpdate)
 	done := make(chan struct{})
 	var timeout unix.Timeval
@@ -106,7 +106,7 @@ func netlink_get_routes(tunnelid uint32) {
 	go func() {
 		<-timer1.C 
     	l.Tracef("timer fired")
-		l.Infof("received all updates....")
+		l.Debugf("received all updates....")
 		close(done)
 	}()
 
