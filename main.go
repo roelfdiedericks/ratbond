@@ -82,11 +82,17 @@ type clientConnection struct {
 	rxloss uint32
 	txloss uint32
 	txcounter uint64
+	txbytes uint64
 	rxcounter uint64
+	rxbytes uint64
 	rxtimeouts uint64
 	txtimeouts uint64
 	priority uint32
-	bandwidth uint32
+
+	last_bw_update time.Time
+	txbandwidth float32
+	rxbandwidth float32
+	
 	
 	last_hello time.Time
 	up_since time.Time
@@ -123,11 +129,16 @@ type serverConnection struct {
 	rxloss uint32
 	txloss uint32
 	txcounter uint64
+	txbytes uint64
 	rxcounter uint64
+	rxbytes uint64
 	rxtimeouts uint64
 	txtimeouts uint64
 	priority uint32
-	bandwidth uint32
+
+	last_bw_update time.Time
+	txbandwidth float32
+	rxbandwidth float32
 
 	last_hello time.Time
 	up_since time.Time
@@ -255,11 +266,16 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server.connections[avail]=server_connection
 
 	//init the struct
-	server_connection.bandwidth=10; server_connection.rxloss=0; server_connection.txloss=0; server_connection.alive=true; 
+	server_connection.txbandwidth=0; 
+	server_connection.rxbandwidth=0; 
+	server_connection.last_bw_update=time.Now()
+	server_connection.rxloss=0; server_connection.txloss=0; server_connection.alive=true; 
 	server_connection.last_hello=time.Now()
 	server_connection.up_since=time.Now()
 	server_connection.txcounter=0
+	server_connection.txbytes=0
 	server_connection.rxcounter=0
+	server_connection.rxbytes=0
 	server_connection.rxtimeouts=0
 	server_connection.txtimeouts=0
 	server_connection.priority=0
@@ -411,6 +427,7 @@ func client_send_linkdown_message(tunnelid uint32, disc_convid uint32, reason st
 		return
 	}
 	connection.txcounter++
+	connection.txbytes+=uint64(len(b))
 }
 
 func run_client(tunnelid uint32) {
@@ -654,6 +671,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			}
 
 			connection.rxcounter++
+			connection.rxbytes+=uint64(n)
 			if server.iface != nil {
 				_, err = server.iface.Write(message[:n])
 				if err != nil {
@@ -688,14 +706,25 @@ func client_send_server_pings() {
 				connection.session.Write(hello)
 			}
 
-			//whilst we're in there, check the hello age
+			//calculate the bandwidth
 			t1 := time.Now()
-			diff := t1.Sub(connection.last_hello).Seconds()
-			l.Debugf("convid:%d hello age:%.2f",convid,diff)
+			bwdiff := t1.Sub(connection.last_bw_update).Seconds()
+			connection.txbandwidth=( float32(connection.txbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
+			connection.txbytes=0
+			connection.rxbandwidth=( float32(connection.rxbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
+			connection.rxbytes=0
+			connection.last_bw_update=t1
+
+			//whilst we're in here, check the hello age
+			hellodiff := t1.Sub(connection.last_hello).Seconds()
+			l.Debugf("convid:%d hello age:%.2f",convid,hellodiff)
 			//if last hello >g_max_hello seconds kill the session
-			if (diff>g_max_hello) {
-				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
+			if (hellodiff>g_max_hello) {
+				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",hellodiff))
 			}
+
+			
+
 		}
 		
 	}
@@ -827,6 +856,7 @@ func client_handle_tun(server *serverType) {
 				goto tryagain;
 			}
 			connection.txcounter++
+			connection.txbytes+=uint64(n)
 			
 		}
 	
@@ -1013,11 +1043,16 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 	connection.session.convid=kcp_conn.GetConv()
 	connection.session.kcp=kcp_conn
 
-	connection.bandwidth=11; connection.rxloss=0; connection.txloss=0; connection.alive=true; 
+	connection.txbandwidth=0; 
+	connection.rxbandwidth=0; 
+	connection.last_bw_update=time.Now()
+	connection.rxloss=0; connection.txloss=0; connection.alive=true; 
 	connection.last_hello=time.Now()
 	connection.up_since=time.Now()
 	connection.txcounter=0
+	connection.txbytes=0
 	connection.rxcounter=0
+	connection.rxbytes=0
 	connection.rxtimeouts=0
 	connection.txtimeouts=0
 	connection.priority=0
@@ -1098,6 +1133,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			}
 
 			connection.rxcounter++
+			connection.rxbytes+=uint64(n)
 
 			//check for hello message
 			if n==2 && (message[0]==0 && message[1]==0) {
@@ -1190,8 +1226,16 @@ func server_send_client_pings() {
 				connection.session.Write(hello)
 			}
 
-			//whilst we're in there, check the hello age
+			//calculate the bandwidth
 			t1 := time.Now()
+			bwdiff := t1.Sub(connection.last_bw_update).Seconds()
+			connection.txbandwidth=( float32(connection.txbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
+			connection.txbytes=0
+			connection.rxbandwidth=( float32(connection.rxbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
+			connection.rxbytes=0
+			connection.last_bw_update=t1
+
+			//whilst we're in there, check the hello age			
 			diff := t1.Sub(connection.last_hello).Seconds()
 			l.Debugf("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello  kill the session
@@ -1324,6 +1368,7 @@ func server_handle_tun(client *clientType) {
 				goto tryagain;
 			}
 			connection.txcounter++	
+			connection.txbytes+=uint64(n)
 		}
 
 

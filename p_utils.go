@@ -127,7 +127,8 @@ func printServerConnection(k *serverConnection) (string) {
 	s+=fmt.Sprintf("rxtimeouts=%d, ",k.rxtimeouts)
 	s+=fmt.Sprintf("txtimeouts=%d, ",k.txtimeouts)
 	s+=fmt.Sprintf("priority=%d, ",k.priority)
-	s+=fmt.Sprintf("bandwidth=%d, ",k.bandwidth)
+	s+=fmt.Sprintf("txbandwidth=%.2f, ",k.txbandwidth)
+	s+=fmt.Sprintf("rxbandwidth=%.2f, ",k.rxbandwidth)
 	
 	ut := time.Now()
 	uptime := ut.Sub(k.up_since).Seconds()
@@ -214,7 +215,8 @@ func printClientConnection(k *clientConnection) (string) {
 	s+=fmt.Sprintf("rxtimeouts=%d, ",k.rxtimeouts)
 	s+=fmt.Sprintf("txtimeouts=%d, ",k.txtimeouts)
 	s+=fmt.Sprintf("priority=%d, ",k.priority)
-	s+=fmt.Sprintf("bandwidth=%d, ",k.bandwidth)
+	s+=fmt.Sprintf("txbandwidth=%.2f, ",k.txbandwidth)
+	s+=fmt.Sprintf("rxbandwidth=%.2f, ",k.rxbandwidth)
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
 	
 	ut := time.Now()
