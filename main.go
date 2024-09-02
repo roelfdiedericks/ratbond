@@ -776,8 +776,9 @@ func client_handle_tun(server *serverType) {
 			//or exit entirely and start afresh
 			continue
 		}
-		
+		server.mu.Lock()
 		connection,ok:=server.connections[chose_convid] 
+		server.mu.Unlock()
 		if !ok {
 			l.Errorf("server_kcp for chose_convid:%d is not available",chose_convid);
 			l.Errorf("g_server_list: \n%s",printServerList(g_server_list))
@@ -1274,7 +1275,9 @@ func server_handle_tun(client *clientType) {
 			time.Sleep(10 * time.Millisecond)
 			continue;
 		}
+		client.mu.Lock()
 		connection,ok:=client.connections[chose_convid] 
+		client.mu.Unlock()
 		if !ok {
 			l.Errorf("client_kcp for chose_convid:%d is not available",chose_convid);
 			l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
