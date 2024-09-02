@@ -28,6 +28,7 @@ import (
 	"github.com/lafikl/consistent"
 	_ "net/http/pprof"
 	parsetcp "github.com/ilyaigpetrov/parse-tcp-go"
+	"github.com/carlmjohnson/versioninfo"
 )
 
 //operating mode
@@ -1398,6 +1399,9 @@ func main() {
 	}
 
 	init_logging()
+
+	l.Infof("ratbond version:%s, revision:%s",versioninfo.Version, versioninfo.Revision)
+
 	if (g_trace) {
 		l.Infof("trace enabled")
 	}
@@ -1490,7 +1494,7 @@ func main() {
 	
 
 
-	l.Infof("main()")
+	
 
 	network_sysctls()
 
