@@ -56,7 +56,7 @@ const g_write_deadline=200
 const g_max_hello=10
 
 var g_kcp_mtu int=1450
-var g_tunnel_mtu=g_kcp_mtu-50
+var g_tunnel_mtu=g_kcp_mtu-40
 
 var g_reorder_buffer_size=128
 
@@ -484,7 +484,7 @@ func run_client(tunnelid uint32) {
 
 			//we poll the routing table every now and again, in case we missed or state messed us arround
 			//this allows us to reconnect to the server every so often
-			netlink_get_routes(tunnelid)
+			go netlink_get_routes(tunnelid)
         }
 
 	}
@@ -665,7 +665,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			//check for hello message
 			if n==2 && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Debugf("received HELLO convid:%d",connection.convid);
+				l.Infof("received HELLO convid:%d",connection.convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -699,15 +699,27 @@ func client_send_server_pings() {
 	for base_convid, server := range g_server_list { // Order not specified 
 		l.Tracef("pinging server:%d",base_convid)
 		for convid,connection := range server.connections {
+
+			//whilst we're in here, check the hello age
+			t1 := time.Now()
+			hellodiff := t1.Sub(connection.last_hello).Seconds()
+			l.Debugf("convid:%d hello age:%.2f",convid,hellodiff)
+			//if last hello >g_max_hello seconds kill the session
+			if (hellodiff>g_max_hello) {
+				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",hellodiff))
+				continue;
+			}
+
+			//send the hellow
 			hello := []byte("\x00\x00")
 			if connection.session!=nil {
-				l.Debugf("sending HELLO to server convid:%d",convid)
+				l.Infof("sending HELLO to server convid:%d",convid)
 				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
 				connection.session.Write(hello)
 			}
 
 			//calculate the bandwidth
-			t1 := time.Now()
+			
 			bwdiff := t1.Sub(connection.last_bw_update).Seconds()
 			connection.txbandwidth=( float32(connection.txbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
 			connection.txbytes=0
@@ -715,13 +727,7 @@ func client_send_server_pings() {
 			connection.rxbytes=0
 			connection.last_bw_update=t1
 
-			//whilst we're in here, check the hello age
-			hellodiff := t1.Sub(connection.last_hello).Seconds()
-			l.Debugf("convid:%d hello age:%.2f",convid,hellodiff)
-			//if last hello >g_max_hello seconds kill the session
-			if (hellodiff>g_max_hello) {
-				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",hellodiff))
-			}
+			
 
 			
 
@@ -1128,7 +1134,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 				}
 				l.Debugf("conn read error:%s", err)
 				//close the client connection
-				server_disconnect_session_by_convid(tunnelid,convid,"KCP Conn Read Error")
+				server_disconnect_session_by_convid(tunnelid,convid,fmt.Sprintf("KCP Conn Read Error:%s",err))
 				return
 			}
 
@@ -1138,7 +1144,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			//check for hello message
 			if n==2 && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Debugf("received HELLO convid:%d",convid);
+				l.Infof("received HELLO convid:%d",convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -1219,15 +1225,26 @@ func server_send_client_pings() {
 	for base_convid, client := range g_client_list { // Order not specified 
 		l.Tracef("pinging client:%d",base_convid)
 		for convid,connection := range client.connections {
+
+			//whilst we're in there, check the hello age	
+			t1 := time.Now()		
+			diff := t1.Sub(connection.last_hello).Seconds()
+			l.Debugf("convid:%d hello age:%.2f",convid,diff)
+			//if last hello >g_max_hello  kill the session
+			if (diff>g_max_hello) {
+				server_disconnect_session_by_convid(client.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
+				continue;
+			}	
+
+			//send the hello
 			hello := []byte("\x00\x00")
 			if connection.session!=nil {
-				l.Debugf("sending HELLO to client convid:%d",convid)
+				l.Infof("sending HELLO to client convid:%d",convid)
 				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
 				connection.session.Write(hello)
 			}
 
-			//calculate the bandwidth
-			t1 := time.Now()
+			//calculate the bandwidth			
 			bwdiff := t1.Sub(connection.last_bw_update).Seconds()
 			connection.txbandwidth=( float32(connection.txbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
 			connection.txbytes=0
@@ -1235,13 +1252,7 @@ func server_send_client_pings() {
 			connection.rxbytes=0
 			connection.last_bw_update=t1
 
-			//whilst we're in there, check the hello age			
-			diff := t1.Sub(connection.last_hello).Seconds()
-			l.Debugf("convid:%d hello age:%.2f",convid,diff)
-			//if last hello >g_max_hello  kill the session
-			if (diff>g_max_hello) {
-				server_disconnect_session_by_convid(client.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
-			}			
+					
 		}
 		
 	}

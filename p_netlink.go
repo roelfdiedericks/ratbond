@@ -3,6 +3,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"fmt"
 	"net"
+	"time"
 	"strings"
 	"golang.org/x/sys/unix"
 )
@@ -93,19 +94,29 @@ func netlink_subscribe_routes(tunnelid uint32) {
 
 
 func netlink_get_routes(tunnelid uint32) {
-	l.Debugf("getting routes, once-off tunnelid:%d",tunnelid)
+	l.Infof("getting routes, once-off tunnelid:%d",tunnelid)
 	route_updates := make(chan netlink.RouteUpdate)
 	done := make(chan struct{})
 	var timeout unix.Timeval
-	timeout.Sec=1
+	timeout.Sec=5
 	timeout.Usec=100
-	defer close(done)
+
+
+	timer1 := time.NewTimer(2 * time.Second)
+	go func() {
+		<-timer1.C 
+    	l.Tracef("timer fired")
+		l.Infof("received all updates....")
+		close(done)
+	}()
+
 	if err := netlink.RouteSubscribeWithOptions(route_updates, done, netlink.RouteSubscribeOptions{ListExisting:true,ReceiveTimeout: &timeout}); err != nil {
 		l.Errorf("subscribe_routes error: ",err)
 	}
 	for update := range route_updates {	
 		handle_route_update(update,tunnelid)
 	}
-	l.Tracef("received all updates....")
+	l.Debugf("all done!")
+	
 }
 

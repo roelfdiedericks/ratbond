@@ -45,6 +45,7 @@ func NewSession(convid uint32, l_udpaddr *net.UDPAddr,l_conn *net.UDPConn) (*Rat
 	session.kcp=kcp
 	session.udp_conn=l_conn
 	l.Tracef("NewSession: %+v",session)
+	l.Warnf("kcp segment size:%d",kcp.GetSegmentSize())
 
 	session.setKCPOptions(session.kcp) //TODO, fixme
 
