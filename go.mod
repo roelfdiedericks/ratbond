@@ -1,6 +1,6 @@
 module github.com/roelfdiedericks/ratbond
 
-go 1.23.0
+go 1.22.0
 
 require (
 	github.com/alecthomas/kong v0.9.0
@@ -9,7 +9,7 @@ require (
 	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/pro-bing v0.4.1
-	github.com/roelfdiedericks/kcp-go v0.0.0-20240827161550-9a47656f73f9
+	github.com/roelfdiedericks/kcp-go v0.0.0-20240829094704-f51283ae6033
 	github.com/sirupsen/logrus v1.9.3
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.2.1

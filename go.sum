@@ -66,6 +66,8 @@ github.com/roelfdiedericks/kcp-go v0.0.0-20240819122244-da7b321d9ee0 h1:MaJ61QC4
 github.com/roelfdiedericks/kcp-go v0.0.0-20240819122244-da7b321d9ee0/go.mod h1:lSHcV3QYwXtITsTumNOf//fsRkS+rDCFmQl7jvaGYGE=
 github.com/roelfdiedericks/kcp-go v0.0.0-20240827161550-9a47656f73f9 h1:dyJ79eGi9Y3K2xmdZl6nlTdRpSzDNy0WgzvGfg3QfKE=
 github.com/roelfdiedericks/kcp-go v0.0.0-20240827161550-9a47656f73f9/go.mod h1:lSHcV3QYwXtITsTumNOf//fsRkS+rDCFmQl7jvaGYGE=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240829094704-f51283ae6033 h1:A5+NBQPq4bAfpFBM0XUdJL/5RJGEAaDLdpv8KPKfZ/c=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240829094704-f51283ae6033/go.mod h1:1MRSO6N0gE66evmXgi1z20jxtw4EVX/g0QcEktReD0E=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 h1:TG/diQgUe0pntT/2D9tmUCz4VNwm9MfrtPr0SU2qSX8=
