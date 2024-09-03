@@ -1,8 +1,12 @@
 package main
+
 import (
 	"fmt"
-	"time"
 	"net"
+	"time"
+	"sort"
+
+	"github.com/roelfdiedericks/kcp-go"
 )
 
 func ByteCountDecimal(b int64) string {
@@ -85,11 +89,17 @@ func printServer(srv *serverType,serverid uint32 ) (string) {
 	s+=fmt.Sprintf("my_tun_ip=%s, ",srv.my_tun_ip)
 	s+=fmt.Sprintf("remote_tun_ip=%s, ",srv.remote_tun_ip)
 	s+="\n connections={ \n"
-	for convid, connection := range srv.connections {
-		s+=fmt.Sprintf("\tconvid=%d ",convid)
-		s+=printServerConnection(connection)
-		s+="  \n"
+
+	keys := make([]int, 0)
+	for k, _ := range srv.connections {
+    	keys = append(keys, int(k))
 	}
+	sort.Ints(keys)
+	for _, convid := range keys {
+		s+=fmt.Sprintf("\tconvid=%d ",convid)
+		s+=printServerConnection(srv.connections[uint32(convid)])
+		s+="  \n"
+	}	
 	s+="}\n"
 	return s
 }
@@ -110,6 +120,19 @@ type server_kcp struct {
 	src_address string
 }
 */
+
+func printSnmp(snmp *kcp.Snmp) string {
+	names:=snmp.Header()
+	values:=snmp.ToSlice()
+	s:="snmp: { \n"
+	for n, name := range names {
+		s+=fmt.Sprintf("%s=%s\n",name,values[n])
+	}
+
+	s+="}\n"
+	return s
+}
+
 func printServerConnection(k *serverConnection) (string) {
 	s:=fmt.Sprintf("{ convid=%d, ",k.convid)
 	if k.session==nil {
@@ -121,6 +144,7 @@ func printServerConnection(k *serverConnection) (string) {
 		s+=fmt.Sprintf("kcp=NIL!!!")
 	}
 	s+=fmt.Sprintf("kcpstate=%d, ",k.session.kcp.GetState())
+	s+=fmt.Sprintf("kcp_rto=%d, ",k.session.kcp.GetRTO())
 	s+=fmt.Sprintf("udp_conn=%p, ",k.session.udp_conn)
 	s+=fmt.Sprintf("ifname=%s, ",k.ifname)
 	s+=fmt.Sprintf("txcounter=%d, ",k.txcounter)
@@ -147,6 +171,8 @@ func printServerConnection(k *serverConnection) (string) {
 	s+=fmt.Sprintf("last_hello=%s",k.last_hello.Format("20060102-15:04:05.000"))
 
 	s+=" }"
+
+	s+=printSnmp(k.session.kcp.GetSnmp())
 	return s
 }
 
@@ -181,12 +207,18 @@ func printClient(cl *clientType,clientid uint32 ) (string) {
 	s+=fmt.Sprintf("my_tun_ip=%s, ",cl.my_tun_ip)
 	s+=fmt.Sprintf("remote_tun_ip=%s, ",cl.remote_tun_ip)
 	s+="\n connections={ \n"
-	for convid, connection := range cl.connections {
+	keys := make([]int, 0)
+	for k, _ := range cl.connections {
+    	keys = append(keys, int(k))
+	}
+	sort.Ints(keys)
+	for _, convid := range keys {
 		s+=fmt.Sprintf("\tconvid=%d ",convid)
-		s+=printClientConnection(connection)
+		s+=printClientConnection(cl.connections[uint32(convid)])
 		s+="  \n"
 	}
 	s+="}\n"
+	
 	return s
 }
 
@@ -211,6 +243,7 @@ func printClientConnection(k *clientConnection) (string) {
 	s:=fmt.Sprintf("{ convid=%d, ",k.convid)
 	s+=fmt.Sprintf("kcp=%p, ",k.session.kcp)
 	s+=fmt.Sprintf("kcpstate=%d, ",k.session.kcp.GetState())
+	s+=fmt.Sprintf("kcp_rto=%d, ",k.session.kcp.GetRTO())
 	//s+=fmt.Sprintf("udp_conn=%p, ",k.udp_conn)
 	s+=fmt.Sprintf("txcounter=%d, ",k.txcounter)
 	s+=fmt.Sprintf("rxcounter=%d, ",k.rxcounter)
@@ -237,6 +270,7 @@ func printClientConnection(k *clientConnection) (string) {
 
 	
 	s+=" }"
+	s+=printSnmp(k.session.kcp.GetSnmp())
 	return s
 }
 

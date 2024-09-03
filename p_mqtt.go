@@ -5,14 +5,18 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-var g_things_broker string = "127.0.0.1"
+var g_things_broker string = ""
+var g_things_broker_port int = 1833
 var g_things_mqttclient mqtt.Client
 var g_things_mqtt_connected bool = false
 
 var things_connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-	l.Infof("THINGS:Connected to %s", g_things_broker)
+	l.Infof("THINGS:Connected to %s:%d", g_things_broker,g_things_broker_port)
 	g_things_mqtt_connected = true
-	mqtt_sub(g_things_mqttclient)
+
+	//subscribe to topics we need
+	mqtt_sub(g_things_mqttclient, fmt.Sprintf("/ratbondserver/%s/token",network_get_mac()))
+	do_mqtt_requests()
 }
 
 var things_connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
@@ -24,13 +28,32 @@ var things_messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg 
 	len := int64(len(msg.Payload()))
 	hl := ByteCountDecimal(len) //human length
 	l.Infof("THINGS:Received message: len(%s) from topic:%s\n", hl, msg.Topic())
-	switch msg.Topic() {
-	case "ratbond/something":
-		ratbond_something(msg)
-		l.Errorf("something: %s payload:%s", msg.Topic(), msg.Payload())
-	default:
-		l.Errorf("unhandled topic: %sm payload:%s", msg.Topic(), msg.Payload())
+
+	//our topics of interest
+	token_topic:=fmt.Sprintf("/ratbondserver/%s/token",network_get_mac())
+	
+
+	if  msg.Topic()==token_topic {
+		l.Warnf("received a token: %s",msg.Payload())
+		g_mqtt_token=fmt.Sprintf("%s",msg.Payload())
+
+		//subscribe to our topics of interest with the token
+		topic:= fmt.Sprintf("/ratbondserver/%s/+",g_mqtt_token)
+		mqtt_sub(g_things_mqttclient,topic)
+		return
+	} else {
+		l.Debugf("topic: %s!=%s",msg.Topic(),token_topic)
 	}
+
+	argv_topic:= fmt.Sprintf("/ratbondserver/%s/argv",g_mqtt_token)
+	if msg.Topic()==argv_topic {
+		l.Infof("received argv:%s",msg.Payload())
+		g_mqtt_argv=string(msg.Payload())
+		return
+	}
+	
+	
+	l.Errorf("unhandled topic: %s payload:%s", msg.Topic(), msg.Payload())
 }
 
 
@@ -40,18 +63,17 @@ func ratbond_something(msg mqtt.Message) {
 
 
 func mqtt_connect_things() bool {
-	var port = 1883
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", g_things_broker, port))
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", g_things_broker, g_things_broker_port))
 	opts.SetClientID("")
-	opts.SetUsername("ratbond")
-	opts.SetPassword("ratbond")
+	opts.SetUsername(g_mqtt_username)
+	opts.SetPassword(g_mqtt_password)
 	opts.SetDefaultPublishHandler(things_messagePubHandler)
 	opts.SetPingTimeout(time.Second * 5)
 	opts.SetResumeSubs(true)
 	opts.OnConnect = things_connectHandler
 	opts.OnConnectionLost = things_connectLostHandler
-	l.Infof("THINGS:mqtt connecting to:%s", g_things_broker)
+	l.Infof("THINGS:mqtt connecting to %s:%d", g_things_broker,g_things_broker_port)
 	g_things_mqttclient = mqtt.NewClient(opts)
 	if token := g_things_mqttclient.Connect(); token.Wait() && token.Error() != nil {
 		l.Error(token.Error())
@@ -63,19 +85,25 @@ func mqtt_connect_things() bool {
 
 
 func mqtt_check_brokers() {
-	l.Infof("BROKERS: things:%t", g_things_mqtt_connected)
+	l.Infof("connected:%t", g_things_mqtt_connected)
 
 	if !g_things_mqtt_connected {
 		g_things_mqtt_connected=false
-		mqtt_connect_things()
+		go mqtt_connect_things()
 	}
 }
 
-func mqtt_sub(client mqtt.Client) {
-	topic := "ratbond/something"
+func mqtt_sub(client mqtt.Client, topic string) {
 	token := client.Subscribe(topic, 1, nil)
 	token.Wait()
 	l.Infof("Subscribed to %s\n", topic)
+}
+
+func mqtt_send(topic string, payload string) {
+	l.Infof("sending: %s: (%s)",topic, payload)
+	token := g_things_mqttclient.Publish(topic, 0, false, payload)
+	token.Wait()
+	l.Debugf("requested %s",topic)
 }
 
 

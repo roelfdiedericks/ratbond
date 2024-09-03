@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"	
+	"strings"
 )
 
 var g_mac string = ""
@@ -144,7 +145,7 @@ func network_get_lan_ip() {
 		}
 	}
 }
-func network_get_mac() {
+func network_get_mac() string {
 	//get eth0 mac addy
 	as, err := network_getMacAddr("eth0")
 	if err != nil {
@@ -154,6 +155,7 @@ func network_get_mac() {
 		g_mac = a
 	}
 	l.Debugf("My mac address:%s", g_mac)
+	return strings.ToUpper(g_mac)
 }
 
 

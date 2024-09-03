@@ -34,15 +34,23 @@ import (
 //operating mode
 var g_run_client=false
 var g_run_server=false
+var g_run_aggregator=true
 var g_use_syslog=true
 var g_debug bool = false
 var g_trace bool = false
 var g_use_consistent_hashing = true
 var g_use_kcp = true
-var g_server_addr = "154.0.6.97:12345"
+var g_connect_addr = ""
 var g_listen_addr = "0.0.0.0:12345"
-var g_buffer_size = 65535
-var g_tunnel_id uint32=660
+
+var g_mqtt_broker_addr = ""
+var g_mqtt_username=""
+var g_mqtt_password=""
+
+
+
+var g_buffer_size = 2165535
+var g_tunnel_id uint32=0
 var g_tunnel_name=""
 var g_server_tun_ip string ="10.10.10.2"
 var g_client_tun_ip string ="10.10.10.1"
@@ -52,8 +60,8 @@ var g_use_aes=false
 
 var g_mux_max=1
 
-const g_write_deadline=1000
-const g_max_hello=10
+const g_write_deadline=2000
+const g_max_hello=5
 
 var g_kcp_mtu int=1420
 var g_tunnel_mtu=g_kcp_mtu-24
@@ -430,10 +438,29 @@ func client_send_linkdown_message(tunnelid uint32, disc_convid uint32, reason st
 	connection.txbytes+=uint64(len(b))
 }
 
-func run_client(tunnelid uint32) {
-	
+func run_client() {
 
-	l.Infof("running as client, base tunnel id:%d",tunnelid)
+	if g_connect_addr=="" {
+		l.Errorf("--connect-addr is required in client mode")
+		os.Exit(1)
+	}
+	if g_tunnel_id==0 {
+		l.Errorf("--tunnel-id is required in client mode")
+		os.Exit(1)
+	}
+	
+	l.Infof("ratbond client connect-addr: %s",g_connect_addr)
+	if (CLI.TunName!="") {
+		g_tunnel_name=CLI.TunName
+		l.Infof("using tun-name:%s",g_tunnel_name)
+	}
+
+	go http_serve()
+
+
+	g_run_client=true
+
+	l.Infof("running as client, base tunnel id:%d",g_tunnel_id)
 	
 	
 	//create two connections, deprecated, handled by netlink_subscribe_routes
@@ -445,14 +472,14 @@ func run_client(tunnelid uint32) {
 
 	runthing("ip", "-br", "address")
 
-	go netlink_subscribe_ifaces(tunnelid)
+	go netlink_subscribe_ifaces(g_tunnel_id)
 
 	// this netlink listener monitors kernel routes, and will connect to the server once a default route is seen,
 	// by calling client_connect_server with the details of the route that came up.
 	//
 	// this is how all connections to a server is established. At startup all existing route information
 	// is read by netlink_subscribe_ifaces, so that existing connections are used and initiated.
-	go netlink_subscribe_routes(tunnelid)
+	go netlink_subscribe_routes(g_tunnel_id)
 
 	for {
         time.Sleep(10 * time.Millisecond)
@@ -484,7 +511,7 @@ func run_client(tunnelid uint32) {
 
 			//we poll the routing table every now and again, in case we missed or state messed us arround
 			//this allows us to reconnect to the server every so often
-			go netlink_get_routes(tunnelid)
+			go netlink_get_routes(g_tunnel_id)
         }
 
 	}
@@ -492,7 +519,21 @@ func run_client(tunnelid uint32) {
 
 
 
-func run_server(tunnelid uint32) {
+func run_server() {
+	g_run_server=true
+
+	l.Infof("ratbond server listen-addr: %s",g_listen_addr)
+
+	if g_tunnel_id==0 {
+		l.Errorf("--tunnel-id is required in server mode")
+		os.Exit(1)
+	}
+
+	if (CLI.TunName!="") {				
+		l.Warnf("tun-name:%s is not used on the server, tun interface is based on tunnel-id",g_tunnel_name)
+	}
+
+	go http_serve()
 
 	l.Infof("running as server")
 
@@ -516,7 +557,7 @@ func run_server(tunnelid uint32) {
 	
 	
 
-	go server_handle_kcp_listener(tunnelid)
+	go server_handle_kcp_listener(g_tunnel_id)
 	//go server_listen_tun(iface)
 
 
@@ -562,11 +603,11 @@ func run_server(tunnelid uint32) {
 
 
 func create_session(convid uint32, src string) (*RatSession, error) {
-	l.Warnf("connecting to %s: convid:%d, src:%s",g_server_addr,convid,src)
+	l.Warnf("connecting to %s: convid:%d, src:%s",g_connect_addr,convid,src)
 
 
 	// network type detection
-	l_serveraddr, err := net.ResolveUDPAddr("udp", g_server_addr)
+	l_serveraddr, err := net.ResolveUDPAddr("udp", g_connect_addr)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -629,7 +670,7 @@ func createTun(tunnelid uint32, ip string) (*water.Interface, error) {
 func client_handle_kcp(server *serverType, connection *serverConnection) {
 	l.Infof("client_handle_kcp: base_convid:%d, convid:%d",server.base_convid, connection.convid)
 	for {
-		message := make([]byte, 65535)
+		message := make([]byte, 265535)
 		for {
 			if connection.session==nil {
 				l.Errorf("session is empty, exiting thread")
@@ -652,8 +693,9 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			n, err := connection.session.Read(message)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",connection.convid)
+					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",connection.convid)
 					connection.rxtimeouts++
+					l.Info("%s",printServerConnection(connection))
 					continue;
 				}
 				l.Debugf("conn read error:", err)
@@ -698,6 +740,21 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 }
 
 
+func client_send_hello(connection *serverConnection,base_convid uint32) {
+	l.Debugf("sending HELLO to server convid:%d",connection.convid)
+	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
+	_, err:=connection.session.Write(g_hello)
+	if err != nil {
+		if (fmt.Sprintf("%s",err)=="timeout") {
+			kcpstate:=connection.session.GetState()
+			l.Errorf(">>>>>>>>>>>>>HELLO write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
+			connection.txtimeouts++
+			client_disconnect_session_by_convid(base_convid,connection.convid,fmt.Sprintf(">>>>>>>>>>>>>>>HELLO deadline exceeded"))
+		}
+		l.Errorf("HELLO conn write error:", err)
+	}
+}
+
 func client_send_server_pings() {
 
 	//iterate through the list of server connections
@@ -717,17 +774,7 @@ func client_send_server_pings() {
 
 			//send the hello			
 			if connection.session!=nil {
-				l.Debugf("sending HELLO to server convid:%d",convid)
-				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*1000)) 
-				_, err:=connection.session.Write(g_hello)
-				if err != nil {
-					if (fmt.Sprintf("%s",err)=="timeout") {
-						l.Warnf("HELLO write deadline exceeded: convid:%d",connection.convid)
-						connection.txtimeouts++
-						continue;
-					}
-					l.Errorf("HELLO conn write error:", err)
-				}
+				go client_send_hello(connection,server.base_convid)				
 			} else {
 				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
 			}
@@ -974,7 +1021,7 @@ func ExtractDst(frame *[]byte,frame_len int) string {
 		}
 	}	
 	//l.Tracef("other dst:%s",header.Dst)
-	return fmt.Sprintf("%s:%s",header.Dst,header.Src)
+	return fmt.Sprintf("%x%x",header.Dst,header.Src)
 }
 
 func ExtractSrc(frame *[]byte, frame_len int) string {
@@ -1012,7 +1059,7 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 		}
 	}	
 	//l.Tracef("other src:%s",header.Src)
-	return fmt.Sprintf("%s:%s",header.Src,header.Dst)
+	return fmt.Sprintf("%x%x",header.Src,header.Dst)
 }
 
 
@@ -1238,6 +1285,21 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 }
 
 
+func server_send_hello(connection *clientConnection) {
+	l.Debugf("sending HELLO to client convid:%d",connection.convid)
+	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
+	_, err:=connection.session.Write(g_hello)
+	if err != nil {
+		if (fmt.Sprintf("%s",err)=="timeout") {
+			kcpstate:=connection.session.GetState()
+			l.Warnf("HELLO write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
+			connection.txtimeouts++
+			return;
+		}
+		l.Errorf("HELLO conn write error:", err)
+	}
+}
+
 func server_send_client_pings() {
 
 	//iterate through the list of clients
@@ -1257,17 +1319,7 @@ func server_send_client_pings() {
 
 			//send the hello
 			if connection.session!=nil {
-				l.Debugf("sending HELLO to client convid:%d",convid)
-				connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*1000)) 
-				_, err:=connection.session.Write(g_hello)
-				if err != nil {
-					if (fmt.Sprintf("%s",err)=="timeout") {
-						l.Warnf("HELLO write deadline exceeded: convid:%d",connection.convid)
-						connection.txtimeouts++
-						continue;
-					}
-					l.Errorf("HELLO conn write error:", err)
-				}
+				go server_send_hello(connection)
 			} else {
 				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
 			}
@@ -1299,10 +1351,10 @@ func server_choose_kcp_conn(packet *[]byte,packet_len int,client *clientType) (u
 		}
 			
 
-		client.consistent.Inc(owner)	
-		client.consistent.Done(owner)
+		//client.consistent.Inc(owner)	
+		//client.consistent.Done(owner)
 		u32, err := strconv.ParseUint(owner, 10, 32)
-		//l.Debugf("consistent: dst=%s, owner=%d",dst,u32)
+		l.Debugf("consistent: dst=%s, owner=%d, consistent:%+v",dst,u32,client.consistent.Hosts())
 		return uint32(u32),err
 	}
 	
@@ -1395,8 +1447,9 @@ func server_handle_tun(client *clientType) {
 			l.Tracef("server finished write kcp: convid%d",connection.convid)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>write deadline exceeded: convid:%d",connection.convid)
+					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>write deadline exceeded: convid:%d",connection.convid)
 					connection.txtimeouts++
+					l.Infof("%s",printClientConnection(connection))
 					continue;
 				}
 				l.Errorf("kcp conn write error:", err)
@@ -1447,7 +1500,10 @@ var CLI struct {
 	BalanceRoundrobin bool `help:"Use round robin packet scheduler."`
 	ConnectAddr string `help:"connect to server address:port (default:154.0.6.97:12345)"`
 	ListenAddr   string `help:"bind server to listen on address:port (default:0.0.0.0:12345)"`
-	TunnelId      uint32 `help:"tunnel-id to use between client and server, has to match on both sides (default:660)" default:"660"`
+	MqttBrokerAddr   string `help:"mqtt broker to connect to address:port (default:things.byteheavy.com:1833)"`
+	MqttUsername   string `help:"mqtt broker username: default nil"`
+	MqttPassword   string `help:"mqtt broker password: default nil"`
+	TunnelId      uint32 `help:"required: tunnel-id to use between client and server, has to match on both sides (default:nil)" default:"0"`
 	TunName      string `help:"name of the tun interface on the client (e.g. tun0, tun1), defaults to tun<tunnel-id>"`
 	TunnelIp     string `help:"/30 (point to point) IP address to assign on client/server tun interfaces. Has to match on both sides. (default:10.10.10.0/30)"`
 	Mux      uint32 `help:"multiplex (n) number of KCP session on an interface (default:1)" default:"1"`
@@ -1459,15 +1515,14 @@ var CLI struct {
 
 	Server struct {
 	} `cmd:"" help:"As a bond server."` 
+
+	Connectaggregator struct {
+		} `cmd:"" help:"Connect to a bonding aggregation server, using MQTT to manage clients."` 
 }
 
-func main() {
 
-	
+func parse_cli() string {
 	ctx := kong.Parse(&CLI)
-	
-
-	
 
 	if (CLI.Debug) {
 		g_debug = true
@@ -1524,8 +1579,8 @@ func main() {
 	l.Infof("tunnel-id=%d",g_tunnel_id)
 
 	if (CLI.ConnectAddr!="") {
-		g_server_addr = CLI.ConnectAddr		
-		_,err:=netip.ParseAddrPort(g_server_addr)
+		g_connect_addr = CLI.ConnectAddr		
+		_,err:=netip.ParseAddrPort(g_connect_addr)
 		if (err!=nil) {
 			l.Errorf("connect-addr: %s error: %s",CLI.ConnectAddr,err)
 			os.Exit(1)
@@ -1539,6 +1594,23 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
+	if (CLI.MqttBrokerAddr!="") {
+		g_mqtt_broker_addr = CLI.MqttBrokerAddr		
+		_,err:=netip.ParseAddrPort(g_mqtt_broker_addr)
+		if (err!=nil) {
+			l.Errorf("mqtt-broker-addr: %s error: %s",CLI.MqttBrokerAddr,err)
+			os.Exit(1)
+		}
+	}
+
+	if (CLI.MqttUsername!="") {
+		g_mqtt_username = CLI.MqttUsername		
+	}
+	if (CLI.MqttPassword!="") {
+		g_mqtt_password = CLI.MqttPassword		
+	}
+	
 	if (CLI.HttpListenAddr!="") {
 		if CLI.HttpListenAddr=="disable" {
 			g_http_listen_addr=""
@@ -1574,43 +1646,30 @@ func main() {
 		g_server_tun_ip=hosts[1]				
 	}
 	l.Infof("tunnel-ip: using %s on client",g_client_tun_ip)
-	l.Infof("tunnel-ip: using %s on server",g_server_tun_ip)
-	
+	l.Infof("tunnel-ip: using %s on server",g_server_tun_ip)	
 
+	return ctx.Command()
+}
 
-	
+func main() {
+
+	command:=parse_cli()
 
 	network_sysctls()
 
-	switch ctx.Command() {
+	switch command {
 		case "client" :	{ 
-			if g_server_addr=="" {
-				l.Errorf("--connect-addr is required in client mode")
-				os.Exit(1)
-			}
-			g_run_client=true
-			l.Infof("ratbond client connect-addr: %s",g_server_addr)
-			if (CLI.TunName!="") {
-				g_tunnel_name=CLI.TunName
-				l.Infof("using tun-name:%s",g_tunnel_name)
-			}
-			
-			go http_serve()
-			run_client(g_tunnel_id)
+			run_client()
 		}
-		case "server" : {
-			g_run_server=true
-			l.Infof("ratbond server listen-addr: %s",g_listen_addr)
-
-			if (CLI.TunName!="") {				
-				l.Warnf("tun-name:%s is not used on the server, tun interface is based on tunnel-id",g_tunnel_name)
-			}
-
-			go http_serve()
-			run_server(g_tunnel_id)
+		case "server" : {			
+			run_server()
+		}
+		case "connectaggregator" : {			
+			run_aggregator()
 		}
 		default: {
-			panic(ctx.Command())
+			l.Errorf("unknown command:%s",command)
+			os.Exit(1)
 		}
 	}
 

@@ -45,7 +45,6 @@ func NewSession(convid uint32, l_udpaddr *net.UDPAddr,l_conn *net.UDPConn) (*Rat
 	session.kcp=kcp
 	session.udp_conn=l_conn
 	l.Tracef("NewSession: %+v",session)
-	l.Warnf("kcp segment size:%d",kcp.GetSegmentSize())
 
 	session.setKCPOptions(session.kcp) //TODO, fixme
 
@@ -140,10 +139,10 @@ func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 		//NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 		//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 		MTU:=g_kcp_mtu
-		SndWnd:=2048 //2048 seems good for thruput
-		RcvWnd:=2048
+		SndWnd:=1024 //2048 seems good for thruput
+		RcvWnd:=1024
 		AckNodelay:=false //this is more speedy
-		s.kcp.SetStreamMode(false) //message mode or stream mode, warrants more checking, stream mode seems faster which is interesting
+		s.kcp.SetStreamMode(true) //message mode or stream mode, warrants more checking, stream mode seems faster which is interesting
 		s.kcp.SetWriteDelay(false)
 		s.kcp.SetNoDelay(NoDelay, Interval, Resend, NoCongestion)
 		s.kcp.SetMtu(MTU)
