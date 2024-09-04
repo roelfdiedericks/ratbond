@@ -148,6 +148,8 @@ func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 		s.kcp.SetMtu(MTU)
 		s.kcp.SetWindowSize(SndWnd, RcvWnd)
 		s.kcp.SetACKNoDelay(AckNodelay)
+
+		s.kcp.SetDeadlink(40)
 	}
 }
 

@@ -56,7 +56,7 @@ func printServerList(list map[uint32]*serverType)  (string) {
 func printServerLoads(list map[uint32]*serverType)  (string) {
 	s:=""
 	for serverid, server := range list {
-		s+=fmt.Sprintf("loads:%d { %+v }",serverid,server.consistent.GetLoads())
+		s+=fmt.Sprintf("members:%d { %+v }",serverid,server.consistent.Members())
 	}
 	return s
 }
@@ -64,7 +64,7 @@ func printServerLoads(list map[uint32]*serverType)  (string) {
 func printClientLoads(list map[uint32]*clientType)  (string) {
 	s:=""
 	for clientid, client := range list {
-		s+=fmt.Sprintf("loads:%d { %+v }",clientid,client.consistent.GetLoads())
+		s+=fmt.Sprintf("members:%d { %+v }",clientid,client.consistent.Members())
 	}
 	return s
 }

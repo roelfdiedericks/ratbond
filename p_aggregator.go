@@ -16,7 +16,7 @@ var g_mqtt_argv=""
 func do_mqtt_requests() {	
 	//if we don't have a mqtt token yet, request it			
 	if g_mqtt_token=="" {
-		l.Infof("requesting mqtt token: (%s)",g_mqtt_token)
+		l.Warnf("AGGREGATOR: requesting mqtt token from aggregator: (%s)",g_mqtt_broker_addr)
 		mqtt_send(fmt.Sprintf("/ratbond/%s/need-token",network_get_mac()),g_mqtt_token_secret)
 	} else {
 
@@ -24,13 +24,15 @@ func do_mqtt_requests() {
 
 		//if we don't have argvs request it
 		if g_mqtt_argv=="" {
-			l.Infof("don't have mqtt argv, requesting...")
+			l.Infof("AGGREGATOR: requesting argv...")
 			mqtt_send(fmt.Sprintf("/ratbond/%s/need-argv",g_mqtt_token),"hello")
 		} else {
 
 			//is the client running ?
 			if !g_run_client {			
-				l.Infof("we got argvs! %s",g_mqtt_argv)
+				l.Infof("AGGREGATOR: argv:(%s) received from aggregator, starting client...",g_mqtt_argv)
+
+				l.Tracef("AGGREGATOR: we got argvs! %s",g_mqtt_argv)
 				var arr []string
 				err := json.Unmarshal([]byte(g_mqtt_argv), &arr)
 				if err!=nil {
@@ -38,12 +40,12 @@ func do_mqtt_requests() {
 					return;
 				}
 
-				l.Infof("decoded argvs! %#v",arr)
+				l.Tracef("AGGREGATOR: decoded argvs! %+v",arr)
 				os.Args=arr
 
 				parse_cli()				
 					
-				l.Warnf("got all params from aggregator, starting client:")
+				
 				go run_client()
 
 			} 
@@ -57,14 +59,14 @@ func run_aggregator() {
 		l.Errorf("--mqtt-broker-addr is required")
 		os.Exit(1)
 	}
-	l.Infof("ratbond connectaggregator mqtt-server-addr: %s",g_mqtt_broker_addr)
+	l.Infof("AGGREGATOR: ratbond connectaggregator mqtt-server-addr: %s",g_mqtt_broker_addr)
 
-	l.Infof("connecting to aggregator")
+	l.Infof("AGGREGATOR: connecting to aggregator")
 
 
 	mqttaddr,err:=netip.ParseAddrPort(g_mqtt_broker_addr)
 	if (err!=nil) {
-		l.Errorf("mqtt-broker-addr: %s error: %s",CLI.MqttBrokerAddr,err)
+		l.Errorf("AGGREGATOR: mqtt-broker-addr: %s error: %s",CLI.MqttBrokerAddr,err)
 		os.Exit(1)
 	}
 	g_things_broker=mqttaddr.Addr().String()
@@ -100,7 +102,7 @@ func run_aggregator() {
 			if g_things_mqtt_connected {
 				do_mqtt_requests()
 			} else {
-				l.Infof("waiting for mqtt connection to:%s",g_mqtt_broker_addr)
+				l.Infof("AGGREGATOR: waiting for mqtt connection to:%s",g_mqtt_broker_addr)
 			}
 		}
 
@@ -113,7 +115,8 @@ func run_aggregator() {
 					//the client is running
 					//simply send a hello every now and again, with our stats
 					stats:=printServerList(g_server_list)
-					l.Infof("mqtt hello, sending stats: %s",stats)
+					l.Debugf("AGGREGATOR:mqtt hello, sending stats...")
+					l.Tracef("AGGREGATOR:mqtt hello, sending stats: %s",stats)
 					mqtt_send(fmt.Sprintf("/ratbond/%s/hello",g_mqtt_token),stats)
 			}
             loopcount = 1

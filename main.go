@@ -25,7 +25,7 @@ import (
 	"github.com/roelfdiedericks/kcp-go"
 
 	
-	"github.com/lafikl/consistent"
+	"stathat.com/c/consistent"
 	_ "net/http/pprof"
 	parsetcp "github.com/ilyaigpetrov/parse-tcp-go"
 	"github.com/carlmjohnson/versioninfo"
@@ -695,7 +695,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 				if (fmt.Sprintf("%s",err)=="timeout") {
 					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",connection.convid)
 					connection.rxtimeouts++
-					l.Info("%s",printServerConnection(connection))
+					l.Debugf("%s",printServerConnection(connection))
 					continue;
 				}
 				l.Debugf("conn read error:", err)
@@ -712,7 +712,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			//check for hello message
 			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Debugf("received HELLO convid:%d",connection.convid);
+				l.Tracef("received HELLO convid:%d",connection.convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -741,7 +741,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 
 func client_send_hello(connection *serverConnection,base_convid uint32) {
-	l.Debugf("sending HELLO to server convid:%d",connection.convid)
+	l.Tracef("sending HELLO to server convid:%d",connection.convid)
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
 	_, err:=connection.session.Write(g_hello)
 	if err != nil {
@@ -765,7 +765,7 @@ func client_send_server_pings() {
 			//whilst we're in here, check the hello age
 			t1 := time.Now()
 			hellodiff := t1.Sub(connection.last_hello).Seconds()
-			l.Debugf("convid:%d hello age:%.2f",convid,hellodiff)
+			l.Tracef("convid:%d hello age:%.2f",convid,hellodiff)
 			//if last hello >g_max_hello seconds kill the session
 			if (hellodiff>g_max_hello) {
 				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",hellodiff))
@@ -811,11 +811,10 @@ func client_choose_kcp_conn(packet *[]byte, packet_len int, server *serverType) 
 			return 0,errors.New("consitent get failed")
 		}
 			
-
-		server.consistent.Inc(owner)	
-		server.consistent.Done(owner)
-		u32, err := strconv.ParseUint(owner, 10, 32)
-		l.Tracef("consistent: dst=%s, owner=%d",dst,u32)
+		u32, err := strconv.Atoi(owner)
+		if (g_debug) {
+			l.Debugf("consistent: dst=%s, owner=%d, consistent:%+v",dst,u32,server.consistent.Members())
+		}
 		return uint32(u32),err
 	}
 	
@@ -1000,14 +999,14 @@ func ExtractDst(frame *[]byte,frame_len int) string {
 	
 	//is it a tcp packet, and enough size?
 	if (header.Protocol==6 && frame_len>=24) {
-		//l.Tracef("TCP packet!")		
+		l.Debugf("TCP packet!")		
 		//src port
 		//l.Debugf("%#x",(*frame)[20])
 		//l.Debugf("%#x",(*frame)[21])
 		//dst port
 		//l.Debugf("%#x",(*frame)[22])
 		//l.Debugf("%#x",(*frame)[23])
-		dstport:=fmt.Sprintf("%x%x",(*frame)[22],(*frame)[23])
+		dstport:=fmt.Sprintf("%x%x:%x%x:%s:%s",(*frame)[22],(*frame)[23],(*frame)[20],(*frame)[21],header.Src,header.Dst)
 		//l.Debugf("dstport:%s",dstport)
 		return dstport
 
@@ -1021,7 +1020,7 @@ func ExtractDst(frame *[]byte,frame_len int) string {
 		}
 	}	
 	//l.Tracef("other dst:%s",header.Dst)
-	return fmt.Sprintf("%x%x",header.Dst,header.Src)
+	return fmt.Sprintf("%s:%s",header.Src,header.Dst)
 }
 
 func ExtractSrc(frame *[]byte, frame_len int) string {
@@ -1030,10 +1029,10 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 	header, err := ipv4.ParseHeader(*frame)
 	
 	if err != nil {
-		l.Errorf("ExtractDst packet err:", err)
+		l.Errorf("ExtractSrc packet err:", err)
 	} else {
-		//l.Tracef("ExtractDst:SRC:%s", header.Src)
-		//l.Tracef("ExtractDst:DST:%s", header.Dst)
+		//l.Tracef("ExtractSrc:SRC:%s", header.Src)
+		//l.Tracef("Extractsrc:DST:%s", header.Dst)
 	}
 
 	
@@ -1047,7 +1046,8 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 		//dst port
 		//l.Debugf("%#x",(*frame)[22])
 		//l.Debugf("%#x",(*frame)[23])
-		dstport:=fmt.Sprintf("%x%x",(*frame)[20],(*frame)[21])
+		//dstport:=fmt.Sprintf("%x%x",(*frame)[20],(*frame)[21])
+		dstport:=fmt.Sprintf("%x%x:%x%x:%s:%s",(*frame)[20],(*frame)[21],(*frame)[22],(*frame)[23],header.Dst,header.Src)
 		//l.Debugf("srcport:%s",dstport)
 		return dstport
 		packet,err:=parsetcp.ParseTCPPacket(*frame)
@@ -1059,7 +1059,7 @@ func ExtractSrc(frame *[]byte, frame_len int) string {
 		}
 	}	
 	//l.Tracef("other src:%s",header.Src)
-	return fmt.Sprintf("%x%x",header.Src,header.Dst)
+	return fmt.Sprintf("%s:%s",header.Dst,header.Src)
 }
 
 
@@ -1208,7 +1208,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			//check for hello message
 			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Debugf("received HELLO convid:%d",convid);
+				l.Tracef("received HELLO convid:%d",convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -1286,7 +1286,7 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 
 
 func server_send_hello(connection *clientConnection) {
-	l.Debugf("sending HELLO to client convid:%d",connection.convid)
+	l.Tracef("sending HELLO to client convid:%d",connection.convid)
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
 	_, err:=connection.session.Write(g_hello)
 	if err != nil {
@@ -1310,7 +1310,7 @@ func server_send_client_pings() {
 			//whilst we're in there, check the hello age	
 			t1 := time.Now()		
 			diff := t1.Sub(connection.last_hello).Seconds()
-			l.Debugf("convid:%d hello age:%.2f",convid,diff)
+			l.Tracef("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello  kill the session
 			if (diff>g_max_hello) {
 				server_disconnect_session_by_convid(client.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
@@ -1351,10 +1351,10 @@ func server_choose_kcp_conn(packet *[]byte,packet_len int,client *clientType) (u
 		}
 			
 
-		//client.consistent.Inc(owner)	
-		//client.consistent.Done(owner)
-		u32, err := strconv.ParseUint(owner, 10, 32)
-		l.Debugf("consistent: dst=%s, owner=%d, consistent:%+v",dst,u32,client.consistent.Hosts())
+		u32, err := strconv.Atoi(owner)
+		if (g_debug) {
+			l.Debugf("consistent: dst=%s, owner=%d, consistent:%+v",dst,u32,client.consistent.Members())
+		}
 		return uint32(u32),err
 	}
 	
@@ -1449,7 +1449,7 @@ func server_handle_tun(client *clientType) {
 				if (fmt.Sprintf("%s",err)=="timeout") {
 					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>write deadline exceeded: convid:%d",connection.convid)
 					connection.txtimeouts++
-					l.Infof("%s",printClientConnection(connection))
+					l.Debugf("%s",printClientConnection(connection))
 					continue;
 				}
 				l.Errorf("kcp conn write error:", err)
