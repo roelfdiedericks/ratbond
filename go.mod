@@ -12,7 +12,7 @@ require (
 	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/pro-bing v0.4.1
-	github.com/roelfdiedericks/kcp-go v0.0.0-20240903153419-e54714ddb521
+	github.com/roelfdiedericks/kcp-go v0.0.0-20240904003123-1511f355b510
 	github.com/sirupsen/logrus v1.9.3
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
@@ -35,4 +35,5 @@ require (
 	github.com/vishvananda/netns v0.0.4 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	gopkg.in/oleiade/reflections.v1 v1.0.0 // indirect
+	stathat.com/c/consistent v1.0.0 // indirect
 )

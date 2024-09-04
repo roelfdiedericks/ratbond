@@ -75,6 +75,10 @@ github.com/roelfdiedericks/kcp-go v0.0.0-20240903152240-a47bc5215203 h1:xiXqnHTy
 github.com/roelfdiedericks/kcp-go v0.0.0-20240903152240-a47bc5215203/go.mod h1:1MRSO6N0gE66evmXgi1z20jxtw4EVX/g0QcEktReD0E=
 github.com/roelfdiedericks/kcp-go v0.0.0-20240903153419-e54714ddb521 h1:kfwAUr2yVER9aSm/Uzvesk+CI4N8iAS7tMLsHQ5129Y=
 github.com/roelfdiedericks/kcp-go v0.0.0-20240903153419-e54714ddb521/go.mod h1:1MRSO6N0gE66evmXgi1z20jxtw4EVX/g0QcEktReD0E=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240904002846-8c42ec28ff52 h1:dkv/EuYtMWlvMzLD+bR2U6N3ijwzRirG54sf7x98OBA=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240904002846-8c42ec28ff52/go.mod h1:1MRSO6N0gE66evmXgi1z20jxtw4EVX/g0QcEktReD0E=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240904003123-1511f355b510 h1:PewoWhD2crHdfcrmkDMFYRzr7SXeU+fHYrmHU2GA1qA=
+github.com/roelfdiedericks/kcp-go v0.0.0-20240904003123-1511f355b510/go.mod h1:1MRSO6N0gE66evmXgi1z20jxtw4EVX/g0QcEktReD0E=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 h1:TG/diQgUe0pntT/2D9tmUCz4VNwm9MfrtPr0SU2qSX8=
@@ -164,3 +168,5 @@ gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 honnef.co/go/tools v0.0.0-20190102054323-c2f93a96b099/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
 honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
+stathat.com/c/consistent v1.0.0 h1:ezyc51EGcRPJUxfHGSgJjWzJdj3NiMU9pNfLNGiXV0c=
+stathat.com/c/consistent v1.0.0/go.mod h1:QkzMWzcbB+yQBL2AttO6sgsQS/JSTapcDISJalmCDS0=
