@@ -19,6 +19,35 @@ type RatSession struct {
 	
 }
 
+
+// no fec
+/*
+const dataSize=0
+const paritySize=0
+*/
+
+
+//regular fec
+/*
+const dataSize=10
+const paritySize=3
+*/
+
+
+// minimal fec
+
+const dataSize=10
+const paritySize=1
+
+
+
+// max fec
+/*
+const dataSize=15
+const paritySize=5
+*/
+
+
 // NewSession establishes a session and talks KCP protocol over a packet connection.
 func NewSession(convid uint32, l_udpaddr *net.UDPAddr,l_conn *net.UDPConn) (*RatSession, error) {
 	if (convid==0) {
@@ -36,7 +65,7 @@ func NewSession(convid uint32, l_udpaddr *net.UDPAddr,l_conn *net.UDPConn) (*Rat
 		block, _ = kcp.NewNoneBlockCrypt(key)
 	}
 
-	kcp,err:=kcp.NewConn3(convid,l_udpaddr,block,0,0,l_conn)
+	kcp,err:=kcp.NewConn3(convid, l_udpaddr, block, dataSize, paritySize, l_conn)
 
 	if err!=nil {
 		return nil,err
@@ -149,7 +178,7 @@ func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 		s.kcp.SetWindowSize(SndWnd, RcvWnd)
 		s.kcp.SetACKNoDelay(AckNodelay)
 
-		s.kcp.SetDeadlink(40)
+		s.kcp.SetDeadlink(1000)
 	}
 }
 
@@ -167,7 +196,7 @@ func createListener() (*kcp.Listener, error) {
 
 		l.Infof("listening on %s",g_listen_addr)
 		//return net.Listen("tcp", g_listen_addr)
-		listener,err:=kcp.ListenWithOptions(g_listen_addr, block, 0, 0);
+		listener,err:=kcp.ListenWithOptions(g_listen_addr, block, dataSize, paritySize);
 		return listener,err
 }
 	
