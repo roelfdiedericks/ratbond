@@ -49,15 +49,15 @@ IPV6 support hasn't been tested, but should work. IPV6 won't be balanced with th
 
 
 ## Running
-Trivial run, using defaults. This will create a tun660 interface, connecting to a server running on 1.1.1.1:12345, with 10.10.10.0/30 used as the configured tunnel CIDR.
+Trivial run, using defaults. This will create a tun660 interface on both sides, client is connecting to a server running on 1.1.1.1:12345, with 10.10.10.0/30 (default) used as the configured tunnel CIDR.
 
 server:
 ``` 
-./ratbond server --listen-addr=0.0.0.0:12345
+./ratbond server --listen-addr=0.0.0.0:12345 --tunnel-id=660
 ```
 client:
 ``` 
-./ratbond client --connect-addr=1.1.1.1:12345
+./ratbond client --connect-addr=1.1.1.1:12345 --tunnel-id=660
 ```
 
 
