@@ -21,7 +21,9 @@ var things_connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 
 var things_connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
 	l.Warnf("MQTT:Connect lost: %v", err)
+	g_things_mqttclient.Disconnect(1000);
 	g_things_mqtt_connected = false
+	g_things_mqttclient=nil
 }
 
 var things_messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
@@ -66,6 +68,10 @@ func ratbond_something(msg mqtt.Message) {
 
 
 func mqtt_connect_things() bool {
+	if (g_things_mqttclient!=nil) {
+		g_things_mqttclient.Disconnect(1000)
+	}
+	g_things_mqttclient=nil
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", g_things_broker, g_things_broker_port))
 	opts.SetClientID("")
@@ -93,22 +99,26 @@ func mqtt_check_brokers() {
 	if !g_things_mqtt_connected {
 		g_things_mqtt_connected=false
 		l.Warnf("mqtt not connected")
-		go mqtt_connect_things()
+		mqtt_connect_things()
 	}
 }
 
 func mqtt_sub(client mqtt.Client, topic string) {
-	token := client.Subscribe(topic, 1, nil)
-	token.Wait()
-	l.Debugf("Subscribed to %s\n", topic)
+	if g_things_mqtt_connected && client!=nil {
+		token := client.Subscribe(topic, 1, nil)
+		token.Wait()
+		l.Debugf("Subscribed to %s\n", topic)
+	}
 }
 
 func mqtt_send(topic string, payload string) {
-	hl := ByteCountDecimal(int64(len(payload))) //human length
-	l.Debugf("sending: len(%s) to (%s)",hl, topic)
-	token := g_things_mqttclient.Publish(topic, 0, false, payload)
-	token.Wait()
-	l.Debugf("requested %s",topic)
+	if g_things_mqtt_connected && g_things_mqttclient !=nil {
+		hl := ByteCountDecimal(int64(len(payload))) //human length
+		l.Debugf("sending: len(%s) to (%s)",hl, topic)
+		token := g_things_mqttclient.Publish(topic, 0, false, payload)
+		token.Wait()
+		l.Debugf("requested %s",topic)
+	}
 }
 
 

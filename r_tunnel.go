@@ -21,10 +21,10 @@ type RatSession struct {
 
 
 // no fec
-/*
+
 const dataSize=0
 const paritySize=0
-*/
+
 
 
 //regular fec
@@ -35,10 +35,10 @@ const paritySize=3
 
 
 // minimal fec
-
+/*
 const dataSize=10
 const paritySize=1
-
+*/
 
 
 // max fec
@@ -168,7 +168,7 @@ func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 		//NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 		//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
 		MTU:=g_kcp_mtu
-		SndWnd:=1024 //2048 seems good for thruput
+		SndWnd:=1024 //2048 seems good for thruput, but bad for reliability
 		RcvWnd:=1024
 		AckNodelay:=false //this is more speedy
 		s.kcp.SetStreamMode(true) //message mode or stream mode, warrants more checking, stream mode seems faster which is interesting

@@ -98,7 +98,7 @@ func run_aggregator() {
 
 		//reconnect to mqtt every 5 seconds, if not connected, and also process mqtt states
 		if loopcount%200 == 0 {
-			mqtt_check_brokers()
+			
 			if g_things_mqtt_connected {
 				do_mqtt_requests()
 			} else {
@@ -110,7 +110,8 @@ func run_aggregator() {
 		//recycle every 15 seconds, do occasional stuff
 		if loopcount%1500 == 0 {
             l.Tracef("loop:%d, housekeeping", loopcount)
-
+			mqtt_check_brokers()
+			
 			if g_run_client {
 					//the client is running
 					//simply send a hello every now and again, with our stats

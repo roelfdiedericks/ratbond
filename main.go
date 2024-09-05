@@ -63,12 +63,12 @@ var g_mux_max=1
 const g_write_deadline=2000
 const g_max_hello=5
 
-var g_kcp_mtu int=1420
+var g_kcp_mtu int=1360
 var g_tunnel_mtu=g_kcp_mtu-24
 
 var g_reorder_buffer_size=128
 
-var g_hello = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+var g_hello = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 
 var g_data string
 
@@ -367,7 +367,7 @@ func client_disconnect_session_by_src(tunnelid uint32, src string, ifname string
 	//find the kcp connection matching the src address and disconnect/destroy it
 	for convid, connection := range server.connections {
 		if connection.src_address==src {
-			l.Infof("disconnecting kcp convid: %d",connection.convid)
+			l.Errorf("disconnecting kcp convid: %d, ifname:%s",connection.convid,connection.ifname)
 			client_close_connection(server,connection,convid)			
 			client_send_linkdown_message(tunnelid,convid,fmt.Sprintf("source:%s src default route removed"))
 		}
@@ -389,7 +389,7 @@ func client_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32, re
 	server.mu.Lock()
 	for convid, connection := range server.connections {
 		if connection.convid==disc_convid {
-			l.Infof("disconnecting kcp convid: %d",connection.convid)
+			l.Errorf("disconnecting kcp convid: %d ifname:%s",connection.convid,connection.ifname)
 			client_close_connection(server,connection,convid)					
 			client_send_linkdown_message(tunnelid,convid,reason)
 		}
@@ -688,7 +688,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 			
 			//2 seconds read deadline
-			connection.session.SetReadDeadline(time.Now().Add(time.Millisecond*2000)) 
+			connection.session.SetReadDeadline(time.Now().Add(time.Millisecond*5000)) 
 
 			n, err := connection.session.Read(message)
 			if err != nil {
@@ -742,12 +742,12 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 func client_send_hello(connection *serverConnection,base_convid uint32) {
 	l.Tracef("sending HELLO to server convid:%d",connection.convid)
-	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
+	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*6000)) 
 	_, err:=connection.session.Write(g_hello)
 	if err != nil {
 		if (fmt.Sprintf("%s",err)=="timeout") {
 			kcpstate:=connection.session.GetState()
-			l.Errorf(">>>>>>>>>>>>>HELLO write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
+			l.Errorf(">>>>>>>>>>>>>HELLO write deadline exceeded: convid:%d kcpstate:%d iface:%s",connection.convid,kcpstate,connection.ifname)
 			connection.txtimeouts++
 			client_disconnect_session_by_convid(base_convid,connection.convid,fmt.Sprintf(">>>>>>>>>>>>>>>HELLO deadline exceeded"))
 		}
@@ -1292,7 +1292,7 @@ func server_send_hello(connection *clientConnection) {
 	if err != nil {
 		if (fmt.Sprintf("%s",err)=="timeout") {
 			kcpstate:=connection.session.GetState()
-			l.Warnf("HELLO write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
+			l.Warnf("HELLO write deadline exceeded: convid:%d kcpstate:%d, ifname:%s",connection.convid,kcpstate)
 			connection.txtimeouts++
 			return;
 		}
