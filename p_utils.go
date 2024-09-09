@@ -5,7 +5,9 @@ import (
 	"net"
 	"time"
 	"sort"
-
+	"io"
+	"net/http"
+	"context"
 	"github.com/roelfdiedericks/kcp-go"
 )
 
@@ -166,6 +168,7 @@ func printServerConnection(k *serverConnection) (string) {
 
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
 	s+=fmt.Sprintf("src_address=%s, ",k.src_address)
+	s+=fmt.Sprintf("wan_ip=%s, ",k.wan_ip)
 
 	s+=fmt.Sprintf("up_since=%s, ",k.up_since.Format("20060102-15:04:05.000"))
 	s+=fmt.Sprintf("last_hello=%s",k.last_hello.Format("20060102-15:04:05.000"))
@@ -304,4 +307,51 @@ func ipinc(ip net.IP) {
 			break
 		}
 	}
+}
+
+
+func get_wan_ip(iface string) (string, error) {
+	ip,err:=network_getIpAddr(iface)
+	if err!=nil {
+		l.Errorf("unable to get ip for iface:%s error:%s",iface,err)
+		return "",err
+	}
+	if ip[0]=="" {
+		l.Errorf("unable to get ip for iface:%s got:%s",iface,ip[0])
+	}
+	bind_ip:=ip[0]+":0"
+	addr, err := net.ResolveTCPAddr("tcp", bind_ip)
+	if err!=nil {
+		l.Errorf("unable to ind to ip:%s for iface:%s error:%s",ip,iface)
+		return "",err
+	}
+	dialer := &net.Dialer{LocalAddr: addr}
+
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dialer.Dial(network, addr)
+		return conn, err
+	}
+	transport := &http.Transport{DialContext: dialContext}
+	if transport==nil {
+		l.Errorf("transport was nil!")
+		return "",err
+	}
+	client := &http.Client{
+		Transport: transport,
+	}
+	if client==nil {
+		l.Errorf("client was nil!")
+		return "",err
+	}
+	
+	// http request
+	response, err := client.Get("https://api.ipify.org/") // get my IP address
+	if err!=nil {
+		l.Errorf("http request to api.ipfiy.org failed: error:%s",err)
+		return "",err
+	}
+	data, err := io.ReadAll(response.Body);
+	wan_ip:=fmt.Sprintf("%s",data)
+	l.Infof("wan ip: %s",wan_ip)
+	return wan_ip,nil
 }

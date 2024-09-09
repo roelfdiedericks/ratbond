@@ -153,6 +153,7 @@ type serverConnection struct {
 	up_since time.Time
 	alive bool
 	src_address string
+	wan_ip string
 }
 
 type serverType struct {
@@ -265,6 +266,12 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	}
 	l.Debugf("found available convid:%d",avail)
 
+	wan_ip,err:=get_wan_ip(ifname) 
+	if err!=nil {
+		l.Warnf("unable to get WAN ip: %s",err)
+	}
+	
+	l.Infof("wan ip: %s",wan_ip)
 
 
 	server.mu.Lock()
@@ -290,7 +297,9 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server_connection.priority=0
 	server_connection.convid=avail
 	server_connection.src_address=src
+	server_connection.wan_ip=wan_ip
 	server_connection.ifname=ifname
+	
 
 	session, err := create_session(avail,src)
 	if err != nil {
@@ -512,6 +521,8 @@ func run_client() {
 			//we poll the routing table every now and again, in case we missed or state messed us arround
 			//this allows us to reconnect to the server every so often
 			go netlink_get_routes(g_tunnel_id)
+
+			
         }
 
 	}
