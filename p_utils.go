@@ -350,8 +350,9 @@ func get_wan_ip(iface string) (string, error) {
 		l.Errorf("http request to api.ipfiy.org failed: error:%s",err)
 		return "",err
 	}
+	//TODO: should probably check if the data is somewhat valid, and to detect mobile captive portal type stuff like Vodacom sending a 302
 	data, err := io.ReadAll(response.Body);
 	wan_ip:=fmt.Sprintf("%s",data)
-	l.Infof("wan ip: %s",wan_ip)
+	l.Infof("wan ip: %s for iface:%s from api.ipify.org",wan_ip,iface)
 	return wan_ip,nil
 }

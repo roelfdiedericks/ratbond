@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"sync"
 	"strconv"
+	"strings"
 
 
 	"github.com/pkg/errors"
@@ -61,6 +62,7 @@ var g_use_aes=false
 var g_mux_max=1
 
 const g_write_deadline=2000
+const g_client_max_rxtimeouts=20
 const g_max_hello=5
 
 var g_kcp_mtu int=1360
@@ -225,8 +227,12 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 		server.remote_tun_ip=g_server_tun_ip
 		server.ifname=iface.Name()
 		server.base_convid=tunnelid	
+
+
 		//add default route via the tunnel
-		runthing("ip","route","add","default","via",server.remote_tun_ip)
+		//deprected: we now do it in the loop, when there are enough connections
+		//this might also sort out connecting via private IP's over the tunnel issue
+		//runthing("ip","route","add","default","via",server.remote_tun_ip)//
 		spawn_tun=true
 	}
 
@@ -447,6 +453,42 @@ func client_send_linkdown_message(tunnelid uint32, disc_convid uint32, reason st
 	connection.txbytes+=uint64(len(b))
 }
 
+
+func client_check_paths() {
+	//TODO: check if we have the route first ?
+	//TODO: is this the best way, may cause TCP connection resets if we remove routes....
+	if g_server_list[g_tunnel_id]!=nil {
+		g_server_list[g_tunnel_id].mu.Lock()
+		server:=g_server_list[g_tunnel_id]
+
+
+		if (len(server.connections)>0) {
+			//check if the route exists
+			check:=runthing("ip","route","show","match","0.0.0.0")
+			l.Debugf("check default route:%s",check)
+
+			if strings.Contains(check,server.remote_tun_ip) {
+				l.Debugf("default route via tunnel exists")
+			} else {
+				l.Warnf("TUNNELUP!: adding default route via %s",server.remote_tun_ip)
+				runthing("ip","route","add","default","via",server.remote_tun_ip)
+				
+			}
+		} else {
+			check:=runthing("ip","route","show","match","0.0.0.0")
+			l.Debugf("ALLDOWN: check default route:%s",check)
+			if strings.Contains(check,server.remote_tun_ip) {
+				l.Warnf("removing default route via %s",server.remote_tun_ip)
+				runthing("ip","route","delete","default","via",server.remote_tun_ip)
+			} else {
+				l.Debugf("default route via tunnel doesnt exist, not removing")
+			}
+		}
+		g_server_list[g_tunnel_id].mu.Unlock()
+	}
+}
+
+
 func run_client() {
 
 	if g_connect_addr=="" {
@@ -499,9 +541,13 @@ func run_client() {
         if loopcount%200 == 0 {
             l.Tracef("loop:%d \n", loopcount)
         }
+
+
   		//reconnect to mqtt every 5 seconds, if not connected
   		if loopcount%500 == 0 {
-			//mqtt_check_brokers()
+			
+			//add/remove the default route every 5 seconds, depending on our connections to the server
+			client_check_paths()
 		}
 		
 		//send ping to each server kcp every 2 seconds
@@ -680,6 +726,7 @@ func createTun(tunnelid uint32, ip string) (*water.Interface, error) {
 
 func client_handle_kcp(server *serverType, connection *serverConnection) {
 	l.Infof("client_handle_kcp: base_convid:%d, convid:%d",server.base_convid, connection.convid)
+	rxtimeouts:=0
 	for {
 		message := make([]byte, 265535)
 		for {
@@ -699,14 +746,19 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 			
 			//2 seconds read deadline
-			connection.session.SetReadDeadline(time.Now().Add(time.Millisecond*5000)) 
+			connection.session.SetReadDeadline(time.Now().Add(time.Millisecond*2000)) 
 
 			n, err := connection.session.Read(message)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
 					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",connection.convid)
 					connection.rxtimeouts++
+					rxtimeouts++
 					l.Debugf("%s",printServerConnection(connection))
+					if connection.rxtimeouts>g_client_max_rxtimeouts || rxtimeouts>g_client_max_rxtimeouts {
+						client_disconnect_session_by_convid(server.base_convid,connection.convid,"rx timeouts exceeded")
+						return
+					}
 					continue;
 				}
 				l.Debugf("conn read error:", err)
@@ -878,9 +930,14 @@ func client_handle_tun(server *serverType) {
 		chose_convid,err:=client_choose_kcp_conn(&packet,n,server)
 		if err!=nil || chose_convid==0 {
 			l.Errorf("no connection available to send to, waiting a bit... chose_convid:%d, err:%s",chose_convid,err)
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
+
 			//TODO: we should probably kick the netlink_subscribe_routes into action again to look for routes
 			//or exit entirely and start afresh
+
+			
+			
+			
 			continue
 		}
 		server.mu.Lock()

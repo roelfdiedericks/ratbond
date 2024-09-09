@@ -111,14 +111,17 @@ func run_aggregator() {
 		if loopcount%1500 == 0 {
             l.Tracef("loop:%d, housekeeping", loopcount)
 			mqtt_check_brokers()
-			
 			if g_run_client {
 					//the client is running
 					//simply send a hello every now and again, with our stats
 					stats:=printServerList(g_server_list)
-					l.Debugf("AGGREGATOR:mqtt hello, sending stats...")
-					l.Tracef("AGGREGATOR:mqtt hello, sending stats: %s",stats)
-					mqtt_send(fmt.Sprintf("/ratbond/%s/hello",g_mqtt_token),stats)
+					if (g_mqtt_token!="") {
+						l.Debugf("AGGREGATOR:mqtt hello, sending stats...")
+						l.Tracef("AGGREGATOR:mqtt hello, sending stats: %s",stats)
+						mqtt_send(fmt.Sprintf("/ratbond/%s/hello",g_mqtt_token),stats)
+					} else {
+						l.Errorf("don't have an mqtt token, cannot send hello")
+					}
 			}
             loopcount = 1
         }

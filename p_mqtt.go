@@ -2,6 +2,7 @@ package main
 import (
 	"fmt"
 	"time"
+	"os"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -13,7 +14,7 @@ var g_things_mqtt_connected bool = false
 var things_connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 	l.Infof("MQTT:Connected to AGGREGATOR: %s:%d", g_things_broker,g_things_broker_port)
 	g_things_mqtt_connected = true
-
+	g_mqtt_token=""
 	//subscribe to topics we need
 	mqtt_sub(g_things_mqttclient, fmt.Sprintf("/ratbondserver/%s/token",network_get_mac()))
 	do_mqtt_requests()
@@ -24,6 +25,7 @@ var things_connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Clie
 	g_things_mqttclient.Disconnect(1000);
 	g_things_mqtt_connected = false
 	g_things_mqttclient=nil
+	g_mqtt_token=""
 }
 
 var things_messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
@@ -53,6 +55,12 @@ var things_messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg 
 	argv_topic:= fmt.Sprintf("/ratbondserver/%s/argv",g_mqtt_token)
 	if msg.Topic()==argv_topic {
 		l.Debugf("received argv:%s",msg.Payload())
+		received_argv:=string(msg.Payload())
+		if g_mqtt_argv!="" && g_mqtt_argv!=received_argv {
+			//TODO: this could be more graceful, but ....
+			l.Errorf("client argvs have changed, exiting to apply...")			
+			os.Exit(1)
+		}
 		g_mqtt_argv=string(msg.Payload())
 		return
 	}
@@ -107,7 +115,7 @@ func mqtt_sub(client mqtt.Client, topic string) {
 	if g_things_mqtt_connected && client!=nil {
 		token := client.Subscribe(topic, 1, nil)
 		token.Wait()
-		l.Debugf("Subscribed to %s\n", topic)
+		l.Infof("Subscribed to %s\n", topic)
 	}
 }
 
