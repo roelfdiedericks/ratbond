@@ -334,6 +334,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 		go client_handle_tun(server)
 	}
 
+	client_check_paths()
 }
 
 
@@ -746,7 +747,7 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 			
 			//2 seconds read deadline
-			connection.session.SetReadDeadline(time.Now().Add(time.Millisecond*2000)) 
+			connection.session.SetReadDeadline(time.Now().Add(time.Millisecond*5000)) 
 
 			n, err := connection.session.Read(message)
 			if err != nil {
@@ -766,6 +767,10 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 				return
 			}
+
+			
+			//we can reset the local rxtimeouts if we received a packet.
+			rxtimeouts=0
 
 			connection.rxcounter++
 			connection.rxbytes+=uint64(n)
@@ -945,7 +950,7 @@ func client_handle_tun(server *serverType) {
 		server.mu.Unlock()
 		if !ok {
 			l.Errorf("server_kcp for chose_convid:%d is not available",chose_convid);
-			l.Errorf("g_server_list: \n%s",printServerList(g_server_list))
+			l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
 			continue
 		}	
 		
@@ -1253,7 +1258,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			}
 
 			//2 seconds read deadline
-			kcp_conn.SetReadDeadline(time.Now().Add(time.Millisecond*2000)) 
+			kcp_conn.SetReadDeadline(time.Now().Add(time.Millisecond*5000)) 
 			
 			n, err := kcp_conn.Read(message)
 			if err != nil {
