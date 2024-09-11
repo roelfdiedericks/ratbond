@@ -7,11 +7,12 @@ import (
 
 
 func http_status(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type","text/html")
 	if g_run_client {
-		fmt.Fprintf(w, "g_server_list: \n%s",printServerList(g_server_list))
+		fmt.Fprintf(w, "<pre>g_server_list: \n%s",printServerList(g_server_list))
 	}
 	if g_run_server {
-		fmt.Fprintf(w, "client_list: \n%s",printClientList(g_client_list))
+		fmt.Fprintf(w, "<pre>client_list: \n%s",printClientList(g_client_list))
 	}
 }
 

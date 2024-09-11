@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"context"
 	"github.com/roelfdiedericks/kcp-go"
+	
 )
 
 func ByteCountDecimal(b int64) string {
@@ -84,13 +85,13 @@ type server struct {
 }
 */
 func printServer(srv *serverType,serverid uint32 ) (string) {
-	s:=fmt.Sprintf("server:%d { base_convid=%d, ",serverid,srv.base_convid)
-	s+=fmt.Sprintf("last_convid=%d, ",srv.last_convid)
-	s+=fmt.Sprintf("ifname=%s, ",srv.ifname)
-	s+=fmt.Sprintf("iface=%p, ",srv.iface)
-	s+=fmt.Sprintf("my_tun_ip=%s, ",srv.my_tun_ip)
-	s+=fmt.Sprintf("remote_tun_ip=%s, ",srv.remote_tun_ip)
-	s+="\n connections={ \n"
+	s:=fmt.Sprintf("server:%d \n{ \nbase_convid=%d, \n",serverid,srv.base_convid)
+	s+=fmt.Sprintf("last_convid=%d, \n",srv.last_convid)
+	s+=fmt.Sprintf("ifname=%s, \n",srv.ifname)
+	s+=fmt.Sprintf("iface=%p, \n",srv.iface)
+	s+=fmt.Sprintf("my_tun_ip=%s, \n",srv.my_tun_ip)
+	s+=fmt.Sprintf("remote_tun_ip=%s, \n",srv.remote_tun_ip)
+	s+="\nconnections={ \n\n"
 
 	keys := make([]int, 0)
 	for k, _ := range srv.connections {
@@ -98,7 +99,7 @@ func printServer(srv *serverType,serverid uint32 ) (string) {
 	}
 	sort.Ints(keys)
 	for _, convid := range keys {
-		s+=fmt.Sprintf("\tconvid=%d ",convid)
+		s+=fmt.Sprintf("  convid=%d ",convid)
 		s+=printServerConnection(srv.connections[uint32(convid)])
 		s+="  \n"
 	}	
@@ -126,56 +127,60 @@ type server_kcp struct {
 func printSnmp(snmp *kcp.Snmp) string {
 	names:=snmp.Header()
 	values:=snmp.ToSlice()
-	s:="snmp: { \n"
+	s:="\t\tsnmp: { \n"
 	for n, name := range names {
-		s+=fmt.Sprintf("%s=%s\n",name,values[n])
+		s+=fmt.Sprintf("\t\t\t%s=%s\n",name,values[n])
 	}
 
-	s+="}\n"
+	s+="\t\t}\n"
 	return s
 }
 
 func printServerConnection(k *serverConnection) (string) {
-	s:=fmt.Sprintf("{ convid=%d, ",k.convid)
+	s:=fmt.Sprintf("\n\t{\n\tconvid=%d, \n",k.convid)
 	if k.session==nil {
-		return fmt.Sprintf("session=NIL!!!")
+		return fmt.Sprintf("\tsession=nil\n")
 	}
 	if k.session!=nil {
-		s+=fmt.Sprintf("kcp=%p, ",k.session.kcp)
+		s+=fmt.Sprintf("\tkcp=%p, \n",k.session.kcp)
 	} else {
-		s+=fmt.Sprintf("kcp=NIL!!!")
+		s+=fmt.Sprintf("\tkcp=nil, \n")
 	}
-	s+=fmt.Sprintf("kcpstate=%d, ",k.session.kcp.GetState())
-	s+=fmt.Sprintf("kcp_rto=%d, ",k.session.kcp.GetRTO())
-	s+=fmt.Sprintf("udp_conn=%p, ",k.session.udp_conn)
-	s+=fmt.Sprintf("ifname=%s, ",k.ifname)
-	s+=fmt.Sprintf("txcounter=%d, ",k.txcounter)
-	s+=fmt.Sprintf("rxcounter=%d, ",k.rxcounter)
-	s+=fmt.Sprintf("rxtimeouts=%d, ",k.rxtimeouts)
-	s+=fmt.Sprintf("txtimeouts=%d, ",k.txtimeouts)
-	s+=fmt.Sprintf("priority=%d, ",k.priority)
-	s+=fmt.Sprintf("txbandwidth=%.2f, ",k.txbandwidth)
-	s+=fmt.Sprintf("rxbandwidth=%.2f, ",k.rxbandwidth)
+	s+=fmt.Sprintf("\tkcpstate=%d, \n",k.session.kcp.GetState())
+	s+=fmt.Sprintf("\tkcp_rto=%d, \n",k.session.kcp.GetRTO())
+	s+=fmt.Sprintf("\tudp_conn=%p, \n",k.session.udp_conn)
+	s+=fmt.Sprintf("\tifname=%s, \n",k.ifname)
+	s+=fmt.Sprintf("\ttxcounter=%d, \n",k.txcounter)
+	s+=fmt.Sprintf("\trxcounter=%d, \n",k.rxcounter)
+	s+=fmt.Sprintf("\trxtimeouts=%d, \n",k.rxtimeouts)
+	s+=fmt.Sprintf("\ttxtimeouts=%d, \n",k.txtimeouts)
+	s+=fmt.Sprintf("\tpriority=%d, \n",k.priority)
+	s+=fmt.Sprintf("\ttxbandwidth=%.2f, \n",k.txbandwidth)
+	s+=fmt.Sprintf("\trxbandwidth=%.2f, \n",k.rxbandwidth)
 	
 	ut := time.Now()
 	uptime := ut.Sub(k.up_since).Seconds()
-	s+=fmt.Sprintf("uptime=%.2f, ",uptime)
+	s+=fmt.Sprintf("\tuptime=%.2f, \n",uptime)
 
 	
 	t1 := time.Now()
 	diff := t1.Sub(k.last_hello).Seconds()
-	s+=fmt.Sprintf("hello_age=%.2f, ",diff)
+	s+=fmt.Sprintf("\thello_age=%.2f, \n",diff)
 
-	s+=fmt.Sprintf("alive=%t, ",k.alive)
-	s+=fmt.Sprintf("src_address=%s, ",k.src_address)
-	s+=fmt.Sprintf("wan_ip=%s, ",k.wan_ip)
+	s+=fmt.Sprintf("\talive=%t, \n",k.alive)
+	s+=fmt.Sprintf("\tkcp_mtu=%d, \n",k.kcp_mtu)
+	s+=fmt.Sprintf("\tnext_mtu=%d, \n",k.next_mtu)
+	s+=fmt.Sprintf("\tsrc_address=%s, \n",k.src_address)
+	s+=fmt.Sprintf("\twan_ip=%s, \n",k.wan_ip)
 
-	s+=fmt.Sprintf("up_since=%s, ",k.up_since.Format("20060102-15:04:05.000"))
-	s+=fmt.Sprintf("last_hello=%s",k.last_hello.Format("20060102-15:04:05.000"))
-
-	s+=" }"
+	s+=fmt.Sprintf("\tup_since=%s, \n",k.up_since.Format("20060102-15:04:05.000"))
+	s+=fmt.Sprintf("\tlast_hello=%s \n",k.last_hello.Format("20060102-15:04:05.000"))
 
 	s+=printSnmp(k.session.kcp.GetSnmp())
+
+	s+="\t}\n"
+
+	
 	return s
 }
 
@@ -256,6 +261,7 @@ func printClientConnection(k *clientConnection) (string) {
 	s+=fmt.Sprintf("txbandwidth=%.2f, ",k.txbandwidth)
 	s+=fmt.Sprintf("rxbandwidth=%.2f, ",k.rxbandwidth)
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
+	s+=fmt.Sprintf("kcp_mtu=%d, ",k.kcp_mtu)
 	
 	ut := time.Now()
 	uptime := ut.Sub(k.up_since).Seconds()
@@ -267,6 +273,7 @@ func printClientConnection(k *clientConnection) (string) {
 	s+=fmt.Sprintf("hello_age=%.2f, ",diff)
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
 	s+=fmt.Sprintf("src_address=%s, ",k.src_address)
+	
 
 	s+=fmt.Sprintf("up_since=%s, ",k.up_since.Format("20060102-15:04:05.000"))
 	s+=fmt.Sprintf("last_hello=%s ",k.last_hello.Format("20060102-15:04:05.000"))

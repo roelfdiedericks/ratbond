@@ -30,6 +30,7 @@ import (
 	_ "net/http/pprof"
 	parsetcp "github.com/ilyaigpetrov/parse-tcp-go"
 	"github.com/carlmjohnson/versioninfo"
+
 )
 
 //operating mode
@@ -42,6 +43,7 @@ var g_trace bool = false
 var g_use_consistent_hashing = true
 var g_use_kcp = true
 var g_connect_addr = ""
+var g_connect_ip = ""
 var g_listen_addr = "0.0.0.0:12345"
 
 var g_mqtt_broker_addr = ""
@@ -63,9 +65,16 @@ var g_mux_max=1
 
 const g_write_deadline=2000
 const g_client_max_rxtimeouts=20
-const g_max_hello=5
+const g_max_hello=60
 
-var g_kcp_mtu int=1360
+var g_server_kcp_mtu int=1472-8 //works in general for a 1500 byte frame
+
+var g_kcp_mtu int=1360-24 // works on pretty much everything
+
+var g_max_kcp_mtu=1472-24 //kcp cannot operate above this
+
+var g_kcp_vodacom_mtu=1360-8
+var g_kcp_overhead=24
 var g_tunnel_mtu=g_kcp_mtu-24
 
 var g_reorder_buffer_size=128
@@ -109,6 +118,8 @@ type clientConnection struct {
 	up_since time.Time
 	alive bool
 	src_address string
+
+	kcp_mtu int
 }
 
 type clientType struct {
@@ -156,6 +167,10 @@ type serverConnection struct {
 	alive bool
 	src_address string
 	wan_ip string
+
+	ping_seq int
+	kcp_mtu int
+	next_mtu int //next mtu to try
 }
 
 type serverType struct {
@@ -291,7 +306,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server_connection.txbandwidth=0; 
 	server_connection.rxbandwidth=0; 
 	server_connection.last_bw_update=time.Now()
-	server_connection.rxloss=0; server_connection.txloss=0; server_connection.alive=true; 
+	server_connection.rxloss=0; server_connection.txloss=0; server_connection.alive=false; 
 	server_connection.last_hello=time.Now()
 	server_connection.up_since=time.Now()
 	server_connection.txcounter=0
@@ -305,6 +320,9 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server_connection.src_address=src
 	server_connection.wan_ip=wan_ip
 	server_connection.ifname=ifname
+	server_connection.ping_seq=1
+	server_connection.kcp_mtu=g_kcp_mtu //start off with our generic mtu
+	server_connection.next_mtu=g_kcp_mtu //start off with our generic mtu
 	
 
 	session, err := create_session(avail,src)
@@ -550,6 +568,11 @@ func run_client() {
 			//add/remove the default route every 5 seconds, depending on our connections to the server
 			client_check_paths()
 		}
+
+		//discover mtus
+		if loopcount%100 == 0 {
+			client_probe_mtus()
+		}
 		
 		//send ping to each server kcp every 2 seconds
 		if loopcount%200 == 0 {
@@ -780,12 +803,37 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			//check for hello message
 			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Tracef("received HELLO convid:%d",connection.convid);
+				l.Infof("received HELLO convid:%d",connection.convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
-			
-			
+
+			//check for kcp mtu probe ack message
+			if (message[0]==0x02 && message[1]==0x00) {
+				//this is a kcp mtu probe ACK message, don't send it to the tun
+
+				//decode the MTu that is being ack'ed
+				b := make([]byte, 2)
+				b[0]=message[2]
+				b[1]=message[3]
+				probed_mtu:=int(binary.LittleEndian.Uint16(b))
+
+				l.Warnf("received KCP_MTU_PROBE_ACK:convid%d, probed_mtu:%d",connection.convid,probed_mtu);
+				confirmed_mtu:=probed_mtu
+				connection.session.kcp.SetMtu(confirmed_mtu)
+				connection.kcp_mtu=confirmed_mtu
+				connection.last_hello=time.Now()
+				connection.alive=true
+
+				next_mtu:=confirmed_mtu+4
+				if next_mtu>=g_max_kcp_mtu {
+					l.Errorf("reached maximum mtu of %d",g_max_kcp_mtu)					
+				} else {
+					connection.next_mtu=next_mtu
+				}
+				
+				continue;
+			}		
 
 			if server.iface != nil {
 				_, err = server.iface.Write(message[:n])
@@ -823,6 +871,64 @@ func client_send_hello(connection *serverConnection,base_convid uint32) {
 	}
 }
 
+
+func client_send_kcp_mtu_probe(connection *serverConnection,base_convid uint32) {
+	l.Tracef("sending KCP_MTU_PROBE to server convid:%d",connection.convid)
+	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*6000)) 
+
+	probe_length:=connection.next_mtu
+
+	connection.session.kcp.SetMtu(connection.next_mtu+g_kcp_overhead)
+
+	
+	//probe_length:=1300
+	kcp_mtu_probe := make([]byte, probe_length)
+	kcp_mtu_probe[0]=0x01
+
+	//create the message
+	b := make([]byte, 2)
+	binary.LittleEndian.PutUint16(b, uint16(probe_length))
+	kcp_mtu_probe[2]=b[0]
+	kcp_mtu_probe[3]=b[1]
+
+	l.Infof("sending KCP_MTU_PROBE to server convid:%d, len:%d",connection.convid,len(kcp_mtu_probe))
+	_, err:=connection.session.Write(kcp_mtu_probe)
+	if err != nil {
+		if (fmt.Sprintf("%s",err)=="timeout") {
+			kcpstate:=connection.session.GetState()
+			l.Errorf(">>>>>>>>>>>>>KCP_MTU_PROBE write deadline exceeded: convid:%d kcpstate:%d iface:%s",connection.convid,kcpstate,connection.ifname)
+			connection.txtimeouts++
+		}
+		l.Errorf("KCP_MTU_PROBE conn write error:", err)
+	}
+	
+}
+
+func client_probe_mtus() {
+
+	//iterate through the list of server connections
+	for base_convid, server := range g_server_list { // Order not specified 
+		l.Tracef("probing server:%d",base_convid)
+		for convid,connection := range server.connections {
+
+			//send the hello			
+			if connection.session!=nil {
+				go client_send_kcp_mtu_probe(connection,server.base_convid)				
+			} else {
+				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
+			}
+		}	
+	}
+}
+
+func client_send_mtu_probe(connection *serverConnection,base_convid uint32) {
+	l.Infof("probing mtu to server convid:%d, src:%s",connection.convid, connection.src_address)
+	connection.ping_seq++
+	ping_probe(g_connect_ip,fmt.Sprintf("%s",connection.src_address),1200,connection.ping_seq)
+}
+
+
+
 func client_send_server_pings() {
 
 	//iterate through the list of server connections
@@ -842,7 +948,9 @@ func client_send_server_pings() {
 
 			//send the hello			
 			if connection.session!=nil {
-				go client_send_hello(connection,server.base_convid)				
+				go client_send_hello(connection,server.base_convid)
+				//go client_send_mtu_probe(connection,server.base_convid)
+				go client_send_kcp_mtu_probe(connection,server.base_convid)
 			} else {
 				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
 			}
@@ -882,6 +990,10 @@ func client_choose_kcp_conn(packet *[]byte, packet_len int, server *serverType) 
 		u32, err := strconv.Atoi(owner)
 		if (g_debug) {
 			l.Debugf("consistent: dst=%s, owner=%d, consistent:%+v",dst,u32,server.consistent.Members())
+		}
+		connid:=uint32(u32)
+		if !server.connections[connid].alive {
+			return 0,errors.New("connection isn't alive")
 		}
 		return uint32(u32),err
 	}
@@ -1027,7 +1139,7 @@ func setClientConnOptions(conn *kcp.UDPSession) {
 func setServerConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
-	MTU:=g_kcp_mtu
+	MTU:=g_server_kcp_mtu
 	SndWnd:=1024
 	RcvWnd:=1024
 	AckNodelay:=false //this is more speedy
@@ -1186,7 +1298,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 	connection.txbandwidth=0; 
 	connection.rxbandwidth=0; 
 	connection.last_bw_update=time.Now()
-	connection.rxloss=0; connection.txloss=0; connection.alive=true; 
+	connection.rxloss=0; connection.txloss=0; connection.alive=false; 
 	connection.last_hello=time.Now()
 	connection.up_since=time.Now()
 	connection.txcounter=0
@@ -1263,7 +1375,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			n, err := kcp_conn.Read(message)
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",convid)
+					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>server read deadline exceeded: convid:%d",convid)
 					connection.rxtimeouts++
 					continue;
 				}
@@ -1281,8 +1393,32 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			//check for hello message
 			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Tracef("received HELLO convid:%d",convid);
+				l.Infof("received HELLO convid:%d",convid);
 				connection.last_hello=time.Now()
+				continue;
+			}
+
+			//check for kcp mtu probe message (which we should be able to read in one foul swoop)
+			if (message[0]==0x01 && message[1]==0x00) {
+				//this is an kcp mtu probe message, don't send it to the tun
+				//decode the mtu that is being probed
+				b := make([]byte, 2)
+				b[0]=message[2]
+				b[1]=message[3]
+				probed_mtu:=int(binary.LittleEndian.Uint16(b))
+				l.Infof("received KCP_MTU_PROBE convid:%d, len:%d, probed_mtu:%d",convid,n,probed_mtu);
+				connection.last_hello=time.Now()
+				connection.alive=true
+
+				//if the probed MTU length matches the received packet size, then we can acknowledge it
+				if probed_mtu==n {
+					l.Infof("KCP_MTU_PROBE data len:%d matched probed mtu:%d, sending KCP_MTU_PROBE_ACK",n,probed_mtu)
+					//TODO, which one is it
+					//connection.session.kcp.SetMtu(probed_mtu-g_kcp_overhead)
+					connection.session.kcp.SetMtu(probed_mtu)
+					connection.kcp_mtu=probed_mtu
+					go server_send_probe_ack(connection,probed_mtu)
+				}
 				continue;
 			}
 
@@ -1305,11 +1441,17 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 
 			
 
+			//check for invalid packet, probably leftover part of an oversize probe
+			if (message[0]==0 && message[1]==0) {
+				l.Warnf("stray leftover probe packet? len: %d, data:%x", n,message[:n])
+				continue;
+			}
+
 			//write the packet to the tun
 			if client.iface != nil {
 				_, err = client.iface.Write(message[:n])
 				if err != nil {
-					l.Errorf("iface write err:", err)
+					l.Errorf("iface write err:%s, len:%d", err,n)
 					//close the client connection
 					server_disconnect_session_by_convid(tunnelid,convid,"TUN write error")
 					return
@@ -1373,6 +1515,32 @@ func server_send_hello(connection *clientConnection) {
 	}
 }
 
+func server_send_probe_ack(connection *clientConnection, acked_len int) {
+	l.Infof("sending KCP_MTU_PROBE_ACK to client convid:%d",connection.convid)
+	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
+
+	kcp_mtu_probe_ack := make([]byte, 4)
+	kcp_mtu_probe_ack[0]=0x02
+	kcp_mtu_probe_ack[1]=0x00
+
+	//create the message
+	b := make([]byte, 2)
+	binary.LittleEndian.PutUint16(b, uint16(acked_len))
+	kcp_mtu_probe_ack[2]=b[0]
+	kcp_mtu_probe_ack[3]=b[1]
+
+	l.Infof("sending KCP_MTU_PROBE_ACK to client convid:%d, len:%d",connection.convid,len(kcp_mtu_probe_ack))
+	_, err:=connection.session.Write(kcp_mtu_probe_ack)
+	if err != nil {
+		if (fmt.Sprintf("%s",err)=="timeout") {
+			kcpstate:=connection.session.GetState()
+			l.Errorf(">>>>>>>>>>>>>KCP_MTU_PROBE_ACK write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
+			connection.txtimeouts++
+		}
+		l.Errorf("KCP_MTU_PROBE_ACK conn write error:", err)
+	}
+}
+
 func server_send_client_pings() {
 
 	//iterate through the list of clients
@@ -1428,7 +1596,12 @@ func server_choose_kcp_conn(packet *[]byte,packet_len int,client *clientType) (u
 		if (g_debug) {
 			l.Debugf("consistent: dst=%s, owner=%d, consistent:%+v",dst,u32,client.consistent.Members())
 		}
-		return uint32(u32),err
+
+		connid:=uint32(u32)
+		if !client.connections[connid].alive {
+			return 0,errors.New("connection isn't alive")
+		}
+		return connid,err
 	}
 	
 
@@ -1480,7 +1653,7 @@ func server_handle_tun(client *clientType) {
 		
 		chose_convid,err:=server_choose_kcp_conn(&packet,n,client)
 		if err!=nil {
-			l.Errorf("no conversations available to send with",chose_convid);
+			l.Errorf("no conversations available to send with convid:%d, %s",chose_convid,err);
 			time.Sleep(10 * time.Millisecond)
 			continue;
 		}
@@ -1653,7 +1826,8 @@ func parse_cli() string {
 
 	if (CLI.ConnectAddr!="") {
 		g_connect_addr = CLI.ConnectAddr		
-		_,err:=netip.ParseAddrPort(g_connect_addr)
+		ipport,err:=netip.ParseAddrPort(g_connect_addr)
+		g_connect_ip=fmt.Sprintf("%s",ipport.Addr())
 		if (err!=nil) {
 			l.Errorf("connect-addr: %s error: %s",CLI.ConnectAddr,err)
 			os.Exit(1)
