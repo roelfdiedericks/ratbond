@@ -12,7 +12,7 @@ require (
 	github.com/lafikl/consistent v0.0.0-20220512074542-bdd3606bfc3e
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/pro-bing v0.4.1
-	github.com/roelfdiedericks/kcp-go v0.0.0-20240911222120-b7c47d5712ee
+	github.com/roelfdiedericks/kcp-go v0.0.0-20240930122228-a1b1f30dbfaa
 	github.com/sirupsen/logrus v1.9.3
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0

@@ -167,7 +167,7 @@ func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
 		NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //useful mode
 		//NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 		//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
-		MTU:=g_kcp_mtu
+		MTU:=g_kcp_mss
 		SndWnd:=1024 //2048 seems good for thruput, but bad for reliability
 		RcvWnd:=1024
 		AckNodelay:=false //this is more speedy

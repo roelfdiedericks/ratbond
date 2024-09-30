@@ -147,6 +147,10 @@ func printServerConnection(k *serverConnection) (string) {
 		s+=fmt.Sprintf("\tkcp=nil, \n")
 	}
 	s+=fmt.Sprintf("\tkcpstate=%d, \n",k.session.kcp.GetState())
+	s+=fmt.Sprintf("\ttxqueue_length=%d, \n",k.session.kcp.GetSendQueueLength())
+	s+=fmt.Sprintf("\ttxbuf_length=%d, \n",k.session.kcp.GetSendBufLength())
+	s+=fmt.Sprintf("\trxqueue_length=%d, \n",k.session.kcp.GetReceiveQueueLength())
+	s+=fmt.Sprintf("\tpeeksize=%d, \n",k.session.kcp.PeekSize())
 	s+=fmt.Sprintf("\tkcp_rto=%d, \n",k.session.kcp.GetRTO())
 	s+=fmt.Sprintf("\tudp_conn=%p, \n",k.session.udp_conn)
 	s+=fmt.Sprintf("\tifname=%s, \n",k.ifname)
@@ -168,8 +172,12 @@ func printServerConnection(k *serverConnection) (string) {
 	s+=fmt.Sprintf("\thello_age=%.2f, \n",diff)
 
 	s+=fmt.Sprintf("\talive=%t, \n",k.alive)
-	s+=fmt.Sprintf("\tkcp_mtu=%d, \n",k.kcp_mtu)
-	s+=fmt.Sprintf("\tnext_mtu=%d, \n",k.next_mtu)
+	s+=fmt.Sprintf("\tkcp_mss=%d, \n",k.kcp_mss)
+	s+=fmt.Sprintf("\tnext_mss=%d, \n",k.next_mss)
+	s+=fmt.Sprintf("\tkcp_mtu=%d, \n",k.kcp_mss+g_kcp_overhead)
+	s+=fmt.Sprintf("\tphys_mtu=%d, \n",k.kcp_mss+g_kcp_overhead+g_udp_overhead)
+	s+=fmt.Sprintf("\tnum_probes=%d, \n",k.probe_count)
+	s+=fmt.Sprintf("\tprobe_acks=%d, \n",k.probe_acks)
 	s+=fmt.Sprintf("\tsrc_address=%s, \n",k.src_address)
 	s+=fmt.Sprintf("\twan_ip=%s, \n",k.wan_ip)
 
@@ -251,6 +259,10 @@ func printClientConnection(k *clientConnection) (string) {
 	s:=fmt.Sprintf("{ convid=%d, ",k.convid)
 	s+=fmt.Sprintf("kcp=%p, ",k.session.kcp)
 	s+=fmt.Sprintf("kcpstate=%d, ",k.session.kcp.GetState())
+	s+=fmt.Sprintf("\ttxqueue_length=%d, \n",k.session.kcp.GetSendQueueLength())
+	s+=fmt.Sprintf("\ttxbuf_length=%d, \n",k.session.kcp.GetSendBufLength())
+	s+=fmt.Sprintf("\trxqueue_length=%d, \n",k.session.kcp.GetReceiveQueueLength())
+	s+=fmt.Sprintf("\tpeeksize=%d, \n",k.session.kcp.PeekSize())
 	s+=fmt.Sprintf("kcp_rto=%d, ",k.session.kcp.GetRTO())
 	//s+=fmt.Sprintf("udp_conn=%p, ",k.udp_conn)
 	s+=fmt.Sprintf("txcounter=%d, ",k.txcounter)
@@ -261,7 +273,10 @@ func printClientConnection(k *clientConnection) (string) {
 	s+=fmt.Sprintf("txbandwidth=%.2f, ",k.txbandwidth)
 	s+=fmt.Sprintf("rxbandwidth=%.2f, ",k.rxbandwidth)
 	s+=fmt.Sprintf("alive=%t, ",k.alive)
-	s+=fmt.Sprintf("kcp_mtu=%d, ",k.kcp_mtu)
+	s+=fmt.Sprintf("kcp_mmss=%d, ",k.kcp_mss)
+	s+=fmt.Sprintf("kcp_mtu=%d, ",k.kcp_mss+g_kcp_overhead)
+	s+=fmt.Sprintf("phys_mtu=%d, ",k.kcp_mss+g_kcp_overhead+g_udp_overhead)
+
 	
 	ut := time.Now()
 	uptime := ut.Sub(k.up_since).Seconds()

@@ -64,22 +64,29 @@ var g_use_aes=false
 var g_mux_max=1
 
 const g_write_deadline=2000
-const g_client_max_rxtimeouts=20
+const g_client_max_rxtimeouts=5
+const g_client_max_mss_probes=200
+const g_client_mss_increment=8
 const g_max_hello=60
 
-var g_server_kcp_mtu int=1472-8 //works in general for a 1500 byte frame
+var g_kcp_overhead=24+28
+var g_udp_overhead=20+8 // (IP = 20, udp =8)
 
-var g_kcp_mtu int=1360-24 // works on pretty much everything
+var g_server_kcp_mss int=1472-g_udp_overhead-g_kcp_overhead //works in general for a 1500 byte frame
 
-var g_max_kcp_mtu=1472-24 //kcp cannot operate above this
+var g_kcp_mss int=1360-g_kcp_overhead // works on pretty much everything, we will start probing upwards from here...
 
-var g_kcp_vodacom_mtu=1360-8
-var g_kcp_overhead=24
-var g_tunnel_mtu=g_kcp_mtu-24
+var g_max_kcp_mss=1500-28-24 //kcp cannot possibly operate above this (1500 ethernet-28 IP+UDP - kcp_overhead) == 1472
+
+
+var g_kcp_vodacom_mss=1360-8
+
+var g_tunnel_mtu=g_kcp_mss
 
 var g_reorder_buffer_size=128
 
-var g_hello = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+var g_client_hello = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00HELLO\nFROMCLIENT")
+var g_server_hello = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00HELLO\nFROMSERVER")
 
 var g_data string
 
@@ -119,7 +126,7 @@ type clientConnection struct {
 	alive bool
 	src_address string
 
-	kcp_mtu int
+	kcp_mss int
 }
 
 type clientType struct {
@@ -169,8 +176,11 @@ type serverConnection struct {
 	wan_ip string
 
 	ping_seq int
-	kcp_mtu int
-	next_mtu int //next mtu to try
+	kcp_mss int
+	next_mss int //next mss to try
+	settled_mss int //mss settled on
+	probe_count int //number of probes sent
+	probe_acks int //number of acknowledge probes
 }
 
 type serverType struct {
@@ -321,8 +331,11 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 	server_connection.wan_ip=wan_ip
 	server_connection.ifname=ifname
 	server_connection.ping_seq=1
-	server_connection.kcp_mtu=g_kcp_mtu //start off with our generic mtu
-	server_connection.next_mtu=g_kcp_mtu //start off with our generic mtu
+	server_connection.kcp_mss=g_kcp_mss //start off with our generic mss
+	server_connection.next_mss=g_kcp_mss //start off with our generic mss
+	server_connection.settled_mss=0
+	server_connection.probe_count=0
+	server_connection.probe_acks=0
 	
 
 	session, err := create_session(avail,src)
@@ -346,7 +359,7 @@ func client_connect_server(tunnelid uint32, src string, ifname string, gw string
 
 	//write something to the KCP to wake the other end
 	session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
-	session.Write(g_hello)
+	session.Write(g_client_hello)
 	go client_handle_kcp(server,server_connection)
 	if (spawn_tun) {
 		go client_handle_tun(server)
@@ -569,9 +582,9 @@ func run_client() {
 			client_check_paths()
 		}
 
-		//discover mtus
+		//discover mss
 		if loopcount%100 == 0 {
-			client_probe_mtus()
+			client_probe_mss()
 		}
 		
 		//send ping to each server kcp every 2 seconds
@@ -801,35 +814,40 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 			connection.last_hello=time.Now()
 
 			//check for hello message
-			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
+			if n==len(g_server_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
 				l.Infof("received HELLO convid:%d",connection.convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
 
-			//check for kcp mtu probe ack message
+			//check for kcp mss probe ack message
 			if (message[0]==0x02 && message[1]==0x00) {
-				//this is a kcp mtu probe ACK message, don't send it to the tun
+				//this is a kcp mss probe ACK message, don't send it to the tun
 
-				//decode the MTu that is being ack'ed
+				//decode the MSS that is being ack'ed
 				b := make([]byte, 2)
 				b[0]=message[2]
 				b[1]=message[3]
-				probed_mtu:=int(binary.LittleEndian.Uint16(b))
+				acked_mss:=int(binary.LittleEndian.Uint16(b))
 
-				l.Warnf("received KCP_MTU_PROBE_ACK:convid%d, probed_mtu:%d",connection.convid,probed_mtu);
-				confirmed_mtu:=probed_mtu
+				l.Warnf("received MSS_PROBE_ACK:convid%d, probed_mss:%d, mtu:%d",connection.convid,acked_mss,acked_mss+g_kcp_overhead);
+				confirmed_mtu:=acked_mss+g_kcp_overhead
+				l.Infof("setting convid:%d mss:%d mtu:%d",connection.convid,acked_mss,confirmed_mtu)
 				connection.session.kcp.SetMtu(confirmed_mtu)
-				connection.kcp_mtu=confirmed_mtu
+				connection.kcp_mss=acked_mss
 				connection.last_hello=time.Now()
+				connection.probe_acks++
 				connection.alive=true
 
-				next_mtu:=confirmed_mtu+4
-				if next_mtu>=g_max_kcp_mtu {
-					l.Errorf("reached maximum mtu of %d",g_max_kcp_mtu)					
+				//try the next mss
+				next_mss:=acked_mss+g_client_mss_increment
+				if next_mss>=g_max_kcp_mss {
+					l.Errorf("reached maximum mss of %d",g_max_kcp_mss)
+					//this should stop the probing
+					connection.settled_mss=acked_mss
 				} else {
-					connection.next_mtu=next_mtu
+					connection.next_mss=next_mss
 				}
 				
 				continue;
@@ -857,9 +875,13 @@ func client_handle_kcp(server *serverType, connection *serverConnection) {
 
 
 func client_send_hello(connection *serverConnection,base_convid uint32) {
-	l.Tracef("sending HELLO to server convid:%d",connection.convid)
+	l.Infof("sending HELLO to server convid:%d",connection.convid)
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*6000)) 
-	_, err:=connection.session.Write(g_hello)
+	n, err:=connection.session.Write(g_client_hello)
+	if (n<=0) {
+		l.Errorf("err: %d whilst sending hello", n )
+		return
+	}
 	if err != nil {
 		if (fmt.Sprintf("%s",err)=="timeout") {
 			kcpstate:=connection.session.GetState()
@@ -872,59 +894,82 @@ func client_send_hello(connection *serverConnection,base_convid uint32) {
 }
 
 
-func client_send_kcp_mtu_probe(connection *serverConnection,base_convid uint32) {
-	l.Tracef("sending KCP_MTU_PROBE to server convid:%d",connection.convid)
+func client_send_kcp_mss_probe(connection *serverConnection,base_convid uint32) {
+	l.Tracef("sending MSS_PROBE to server convid:%d",connection.convid)
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*6000)) 
 
-	probe_length:=connection.next_mtu
+	//if we've reached the maxiumum MSS, stop probing
+	if connection.next_mss>=g_max_kcp_mss {
+		l.Debugf("reached maximum mss of %d",g_max_kcp_mss)
+		return		
+	}
 
-	connection.session.kcp.SetMtu(connection.next_mtu+g_kcp_overhead)
+	//if we've settled on an MSS, stop probing, and apply the last known good mss
+	if (connection.settled_mss!=0) {
+		link_mtu:=connection.kcp_mss+g_kcp_overhead
+		l.Infof("MSS is settled on %d, applying MTU:%d",connection.settled_mss,link_mtu)
+		connection.session.kcp.SetMtu(link_mtu)
+		connection.session.kcp.ReleaseTX()
+		return
+	}
 
+	//early catch, if we missed 3 mss probe aks, we can assume further probing won't help
+	missedacks:=connection.probe_count-connection.probe_acks
+	if missedacks==3 && connection.settled_mss==0 {
+		l.Infof("reached threshold of 3 missed MSS probe acks convid:%d",connection.convid)
+		//settle the MSS
+		connection.settled_mss=connection.kcp_mss
+		return
+	}
+	if (connection.probe_count>=g_client_max_mss_probes) {
+		l.Infof("reached maximum number of MSS probes")
+		return
+	}
 	
-	//probe_length:=1300
-	kcp_mtu_probe := make([]byte, probe_length)
-	kcp_mtu_probe[0]=0x01
+	//allright, let's probe then...
+	connection.probe_count++
+	newmtu:=connection.next_mss+g_kcp_overhead
+	connection.session.kcp.SetMtu(newmtu)
 
-	//create the message
+
+	kcp_mss_probe := make([]byte, connection.next_mss) //create a buffer of exactly the probed mss size
+	for i := range kcp_mss_probe { kcp_mss_probe[i] = 0xFF } //and fill it with a canary
+
+	//create the message, fill in the mss being probed.
 	b := make([]byte, 2)
-	binary.LittleEndian.PutUint16(b, uint16(probe_length))
-	kcp_mtu_probe[2]=b[0]
-	kcp_mtu_probe[3]=b[1]
+	binary.LittleEndian.PutUint16(b, uint16(connection.next_mss))
+	kcp_mss_probe[2]=b[0]
+	kcp_mss_probe[3]=b[1]
 
-	l.Infof("sending KCP_MTU_PROBE to server convid:%d, len:%d",connection.convid,len(kcp_mtu_probe))
-	_, err:=connection.session.Write(kcp_mtu_probe)
+	l.Infof("sending MSS_PROBE to server convid:%d, len:%d, probe_count:%d, missed acks:%d",connection.convid,len(kcp_mss_probe),connection.probe_count,missedacks)
+	connection.session.kcp.ReleaseTX()
+	_, err:=connection.session.Write(kcp_mss_probe)
 	if err != nil {
 		if (fmt.Sprintf("%s",err)=="timeout") {
 			kcpstate:=connection.session.GetState()
-			l.Errorf(">>>>>>>>>>>>>KCP_MTU_PROBE write deadline exceeded: convid:%d kcpstate:%d iface:%s",connection.convid,kcpstate,connection.ifname)
+			l.Errorf(">>>>>>>>>>>>>MSS_PROBE write deadline exceeded: convid:%d kcpstate:%d iface:%s",connection.convid,kcpstate,connection.ifname)
 			connection.txtimeouts++
 		}
-		l.Errorf("KCP_MTU_PROBE conn write error:", err)
+		l.Errorf("MSS_PROBE conn write error:", err)
 	}
 	
 }
 
-func client_probe_mtus() {
+func client_probe_mss() {
 
 	//iterate through the list of server connections
 	for base_convid, server := range g_server_list { // Order not specified 
 		l.Tracef("probing server:%d",base_convid)
 		for convid,connection := range server.connections {
 
-			//send the hello			
+			//send the probe
 			if connection.session!=nil {
-				go client_send_kcp_mtu_probe(connection,server.base_convid)				
+				go client_send_kcp_mss_probe(connection,server.base_convid)				
 			} else {
-				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
+				l.Errorf("SESSION IS NIL error sending MSS_PROBE to server convid:%d",convid)
 			}
 		}	
 	}
-}
-
-func client_send_mtu_probe(connection *serverConnection,base_convid uint32) {
-	l.Infof("probing mtu to server convid:%d, src:%s",connection.convid, connection.src_address)
-	connection.ping_seq++
-	ping_probe(g_connect_ip,fmt.Sprintf("%s",connection.src_address),1200,connection.ping_seq)
 }
 
 
@@ -949,8 +994,6 @@ func client_send_server_pings() {
 			//send the hello			
 			if connection.session!=nil {
 				go client_send_hello(connection,server.base_convid)
-				//go client_send_mtu_probe(connection,server.base_convid)
-				go client_send_kcp_mtu_probe(connection,server.base_convid)
 			} else {
 				l.Errorf("SESSION IS NIL error sending HELLO to server convid:%d",convid)
 			}
@@ -962,11 +1005,7 @@ func client_send_server_pings() {
 			connection.txbytes=0
 			connection.rxbandwidth=( float32(connection.rxbytes) * (8 / 1000.0 / 1000.0) ) / float32(bwdiff)
 			connection.rxbytes=0
-			connection.last_bw_update=t1
-
-			
-
-			
+			connection.last_bw_update=t1			
 
 		}
 		
@@ -1123,13 +1162,14 @@ func client_handle_tun(server *serverType) {
 func setClientConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
-	MTU:=g_kcp_mtu
+	MTU:=g_kcp_mss+g_kcp_overhead
 	SndWnd:=1024
 	RcvWnd:=1024
 	AckNodelay:=false //this is more speedy
 	conn.SetStreamMode(true)
 	conn.SetWriteDelay(false)
 	conn.SetNoDelay(NoDelay, Interval, Resend, NoCongestion)
+	l.Infof("Client: setting mtu to %d",MTU)
 	conn.SetMtu(MTU)
 	conn.SetWindowSize(SndWnd, RcvWnd)
 	conn.SetACKNoDelay(AckNodelay)
@@ -1139,13 +1179,14 @@ func setClientConnOptions(conn *kcp.UDPSession) {
 func setServerConnOptions(conn *kcp.UDPSession) {
 	NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
 	//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
-	MTU:=g_server_kcp_mtu
+	MTU:=g_server_kcp_mss+g_kcp_overhead
 	SndWnd:=1024
 	RcvWnd:=1024
 	AckNodelay:=false //this is more speedy
 	conn.SetStreamMode(true)
 	conn.SetWriteDelay(false)
 	conn.SetNoDelay(NoDelay, Interval, Resend, NoCongestion)
+	l.Infof("Server: setting mtu to %d",MTU)
 	conn.SetMtu(MTU)
 	conn.SetWindowSize(SndWnd, RcvWnd)
 	conn.SetACKNoDelay(AckNodelay)
@@ -1308,6 +1349,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 	connection.rxtimeouts=0
 	connection.txtimeouts=0
 	connection.priority=0
+	connection.kcp_mss=g_kcp_mss
 		
 	connection.convid=convid
 	connection.src_address=fmt.Sprintf("%s",kcp_conn.RemoteAddr())
@@ -1373,9 +1415,10 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 			kcp_conn.SetReadDeadline(time.Now().Add(time.Millisecond*5000)) 
 			
 			n, err := kcp_conn.Read(message)
+			
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Debugf(">>>>>>>>>>>>>>>>>>>>>>>>>>>server read deadline exceeded: convid:%d",convid)
+					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>server read deadline exceeded: convid:%d, kcp state:%d, n:%d",convid,kcpstate,n)
 					connection.rxtimeouts++
 					continue;
 				}
@@ -1385,44 +1428,54 @@ func server_accept_conn(tunnelid uint32, convid uint32, kcp_conn *kcp.UDPSession
 				return
 			}
 
+			if (n<=0) {
+				l.Errorf("Read <=0 (read:%d)",n)
+				continue
+			}
+
+			l.Infof("received pkt len:%d, data:%+v",n,message[:n])
 			connection.rxcounter++
 			connection.rxbytes+=uint64(n)
 			//we can assume if we are receiving data it's like a hello
 			connection.last_hello=time.Now()
 
 			//check for hello message
-			if n==len(g_hello) && (message[0]==0 && message[1]==0) {
+			if n==len(g_client_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
 				l.Infof("received HELLO convid:%d",convid);
 				connection.last_hello=time.Now()
 				continue;
 			}
 
-			//check for kcp mtu probe message (which we should be able to read in one foul swoop)
-			if (message[0]==0x01 && message[1]==0x00) {
-				//this is an kcp mtu probe message, don't send it to the tun
-				//decode the mtu that is being probed
+			//check for mss probe message (which we should be able to read in one foul swoop, at exactly the correct size)
+			//probe messages are 0xFF filled for the entire message
+			if (message[0]==0xFF && message[1]==0xFF) {
+				//this is an mss probe message, don't send it to the tun
+				//decode the mss that is being probed
 				b := make([]byte, 2)
 				b[0]=message[2]
 				b[1]=message[3]
-				probed_mtu:=int(binary.LittleEndian.Uint16(b))
-				l.Infof("received KCP_MTU_PROBE convid:%d, len:%d, probed_mtu:%d",convid,n,probed_mtu);
+				probed_mss:=int(binary.LittleEndian.Uint16(b))
+				l.Infof("received MSS_PROBE convid:%d, len:%d, probed_mss:%d",convid,n,probed_mss);
 				connection.last_hello=time.Now()
 				connection.alive=true
 
-				//if the probed MTU length matches the received packet size, then we can acknowledge it
-				if probed_mtu==n {
-					l.Infof("KCP_MTU_PROBE data len:%d matched probed mtu:%d, sending KCP_MTU_PROBE_ACK",n,probed_mtu)
-					//TODO, which one is it
-					//connection.session.kcp.SetMtu(probed_mtu-g_kcp_overhead)
-					connection.session.kcp.SetMtu(probed_mtu)
-					connection.kcp_mtu=probed_mtu
-					go server_send_probe_ack(connection,probed_mtu)
+				//if the probed MSS length matches the received packet size, then we can acknowledge it
+				if probed_mss==n {
+					l.Infof("MSS_PROBE data len:%d matched probed mtu:%d, sending MSS_PROBE_ACK",n,probed_mss)
+					newmtu:=probed_mss+g_kcp_overhead
+					connection.session.kcp.SetMtu(newmtu)
+					connection.session.kcp.Update()
+					l.Infof("setting convid:%d mss:%d, mtu:%d",convid,probed_mss,newmtu)
+					connection.kcp_mss=probed_mss
+					go server_send_probe_ack(connection,probed_mss)
+				} else {
+					l.Warnf("received incorrectly sized probe message, len:%d allegedly probed mss:%d",n,probed_mss);
 				}
 				continue;
 			}
 
-			//check for linkdown message
+			//check for linkdown message, exactly 3 bytes starting with a zero
 			if n==3 && (message[0]==0) {
 				//this is a linkdown message, don't send it to the tun
 				l.Debugf("linkdown msg len:%d",len(message))
@@ -1501,9 +1554,13 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 
 
 func server_send_hello(connection *clientConnection) {
-	l.Tracef("sending HELLO to client convid:%d",connection.convid)
+	l.Infof("sending HELLO to client convid:%d",connection.convid)
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
-	_, err:=connection.session.Write(g_hello)
+	n, err:=connection.session.Write(g_server_hello)
+	if (n<=0) {
+		l.Errorf("err: %d whilst sending hello", n )
+		return
+	}
 	if err != nil {
 		if (fmt.Sprintf("%s",err)=="timeout") {
 			kcpstate:=connection.session.GetState()
@@ -1516,28 +1573,28 @@ func server_send_hello(connection *clientConnection) {
 }
 
 func server_send_probe_ack(connection *clientConnection, acked_len int) {
-	l.Infof("sending KCP_MTU_PROBE_ACK to client convid:%d",connection.convid)
+	l.Infof("sending MSS_PROBE_ACK to client convid:%d",connection.convid)
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
 
-	kcp_mtu_probe_ack := make([]byte, 4)
-	kcp_mtu_probe_ack[0]=0x02
-	kcp_mtu_probe_ack[1]=0x00
+	kcp_mss_probe_ack := make([]byte, 4)
+	kcp_mss_probe_ack[0]=0x02
+	kcp_mss_probe_ack[1]=0x00
 
 	//create the message
 	b := make([]byte, 2)
 	binary.LittleEndian.PutUint16(b, uint16(acked_len))
-	kcp_mtu_probe_ack[2]=b[0]
-	kcp_mtu_probe_ack[3]=b[1]
+	kcp_mss_probe_ack[2]=b[0]
+	kcp_mss_probe_ack[3]=b[1]
 
-	l.Infof("sending KCP_MTU_PROBE_ACK to client convid:%d, len:%d",connection.convid,len(kcp_mtu_probe_ack))
-	_, err:=connection.session.Write(kcp_mtu_probe_ack)
+	l.Infof("sending MSS_PROBE_ACK to client convid:%d, len:%d",connection.convid,len(kcp_mss_probe_ack))
+	_, err:=connection.session.Write(kcp_mss_probe_ack)
 	if err != nil {
 		if (fmt.Sprintf("%s",err)=="timeout") {
 			kcpstate:=connection.session.GetState()
-			l.Errorf(">>>>>>>>>>>>>KCP_MTU_PROBE_ACK write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
+			l.Errorf(">>>>>>>>>>>>>MSS_PROBE_ACK write deadline exceeded: convid:%d kcpstate:%d",connection.convid,kcpstate)
 			connection.txtimeouts++
 		}
-		l.Errorf("KCP_MTU_PROBE_ACK conn write error:", err)
+		l.Errorf("MSS_PROBE_ACK conn write error:", err)
 	}
 }
 
@@ -1638,7 +1695,7 @@ func server_handle_tun(client *clientType) {
 		//read the packet from the wire
 		//l.Debugf("read tun")
 		l.Tracef("Server about to read from tun:")
-		n, err := client.iface.Read(packet)
+		n, err := client.iface.Read(packet)		
 		l.Tracef("Server finished read from tun:")
 		if err != nil {
 			l.Panicf("tun iface read error:", err)
