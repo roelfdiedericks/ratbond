@@ -13,6 +13,8 @@ var g_udp_overhead=20+8 // (IP = 20, udp =8)
 var g_listener *net.UDPConn
 var g_accept_chan chan *RatSession
 
+var g_remoteConns *sync.Map
+
 type RatSession struct {
 	convid uint32
 
@@ -20,6 +22,7 @@ type RatSession struct {
 	local_addr  *net.UDPAddr // locally bound address     
 	remote_addr *net.UDPAddr // remote peer address
 	is_client bool
+	is_closed bool
 
 	rd         	time.Time // read deadline
 	mu 			sync.Mutex
@@ -52,6 +55,7 @@ func NewClientSession(convid uint32, localaddr *net.UDPAddr,remoteaddr *net.UDPA
 	session.local_addr=localaddr
 	session.udp_conn=conn
 	session.is_client=true
+	session.is_closed=false
 	session.mtu=1300
 
 	l.Tracef("NewRatSession: %+v",session)
@@ -70,6 +74,7 @@ func NewServerSession(convid uint32, localaddr *net.UDPAddr,remoteaddr *net.UDPA
 	session.local_addr=localaddr
 	session.udp_conn=conn
 	session.is_client=false
+	session.is_closed=false
 	session.mtu=1300
 
 	session.chReadEvent = make(chan []byte, 1)
@@ -82,6 +87,9 @@ func NewServerSession(convid uint32, localaddr *net.UDPAddr,remoteaddr *net.UDPA
 
 // Read implements net.Conn
 func (s *RatSession) Read(b []byte) (n int, err error) {
+	if s.is_closed {
+		return 0,errors.New("session is closed")
+	}
 	if s==nil {
 		return 0,errors.New("nil session")
 	}
@@ -130,6 +138,10 @@ func (s *RatSession) DataReceived(b []byte) {
 // Write implements net.Conn
 func (s *RatSession) Write(b []byte) (n int, err error) { 
 	l.Tracef("session write convid:%d, len:%d, dst:%+v, buf:%+v",s.convid,len(b),s.remote_addr,b)
+	if s.is_closed {
+		return 0,errors.New("session is closed")
+	}
+
 	if s==nil {
 		return 0,errors.New("nil session")
 	}
@@ -148,7 +160,15 @@ func (s *RatSession) Close() error {
 	if s==nil {
 		return errors.New("nil session")
 	}
-	return s.udp_conn.Close()
+	
+	if (s.is_client) {
+		return s.udp_conn.Close()
+	} else {
+		g_remoteConns.Delete(s.remote_addr.String())
+		s.is_closed=true
+		return nil
+	}
+	
 }
 	
 func (s *RatSession) GetState() uint32 { 
@@ -246,7 +266,7 @@ func (s *RatSession) GetConv() uint32 {
 
 
 // Send a hello message over the session
-func (s *RatSession) SendHello() { 
+func (s *RatSession) SendHello() (bool, error) { 
 
 	//Send a hello message with our tunnel id
 	s.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline))
@@ -268,7 +288,10 @@ func (s *RatSession) SendHello() {
 	n,err:=s.Write(pkt)
 	if err!=nil || n==0 {
 		l.Errorf("send hello FAILED! err:%s n:%d",err,n )
+		return false,err
 	}
+
+	return true,nil
 }
 
 // ========================== LISTENER ===========================

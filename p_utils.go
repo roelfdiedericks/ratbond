@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"context"
-
 )
 
 func ByteCountDecimal(b int64) string {
@@ -322,9 +321,13 @@ func get_wan_ip(iface string) (string, error) {
 		l.Errorf("unable to ind to ip:%s for iface:%s error:%s",ip,iface)
 		return "",err
 	}
-	dialer := &net.Dialer{LocalAddr: addr}
 
-	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+
+	dialer := &net.Dialer{LocalAddr: addr}
+	dialer.Timeout=5 * time.Second
+	
+	
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {		
 		conn, err := dialer.Dial(network, addr)
 		return conn, err
 	}

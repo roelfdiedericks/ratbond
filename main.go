@@ -67,7 +67,7 @@ const g_write_deadline=2000
 const g_client_max_rxtimeouts=5
 const g_client_max_mss_probes=200
 const g_client_mss_increment=4
-const g_max_hello=60
+const g_max_hello=5
 
 
 
@@ -476,7 +476,7 @@ func client_send_linkdown_message(tunnelid uint32, disc_convid uint32, reason st
 	pkt[2]=b[1]
 
 	//and send it out the selected KCP conn
-	l.Debugf("send LINKDOWN via convid:%d sending via %s",chose_convid,connection.src_address)
+	l.Infof("send LINKDOWN via convid:%d sending via %s",chose_convid,connection.src_address)
 	
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline)) 
 	_, err = connection.session.Write(pkt)
@@ -767,7 +767,6 @@ func createTun(tunnelid uint32, ip string) (*water.Interface, error) {
 
 func client_handle_session(server *serverType, connection *serverConnection) {
 	l.Infof("base_convid:%d, convid:%d",server.base_convid, connection.convid)
-	rxtimeouts:=0
 	for {
 		message := make([]byte, 265535)
 		for {
@@ -794,23 +793,22 @@ func client_handle_session(server *serverType, connection *serverConnection) {
 				if (fmt.Sprintf("%s",err)=="timeout") {
 					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>read deadline exceeded: convid:%d",connection.convid)
 					connection.rxtimeouts++
-					rxtimeouts++
 					l.Debugf("%s",printServerConnection(connection))
-					if connection.rxtimeouts>g_client_max_rxtimeouts || rxtimeouts>g_client_max_rxtimeouts {
+					if connection.rxtimeouts>g_client_max_rxtimeouts {
 						client_disconnect_session_by_convid(server.base_convid,connection.convid,"rx timeouts exceeded")
 						return
 					}
 					continue;
 				}
 				l.Debugf("conn read error:", err)
-				client_disconnect_session_by_convid(server.base_convid,connection.convid,"RECV conn read error")
+				client_disconnect_session_by_convid(server.base_convid,connection.convid,fmt.Sprintf("RECV conn read error:%s",err))
 
 				return
 			}
 
 			
 			//we can reset the local rxtimeouts if we received a packet.
-			rxtimeouts=0
+			connection.rxtimeouts=0
 
 			connection.rxcounter++
 			connection.rxbytes+=uint64(n)
@@ -835,7 +833,7 @@ func client_handle_session(server *serverType, connection *serverConnection) {
 				b[1]=message[3]
 				acked_mss:=int(binary.LittleEndian.Uint16(b))
 
-				l.Warnf("received MSS_PROBE_ACK:convid%d, acked_mss:%d",connection.convid,acked_mss);
+				l.Infof("received MSS_PROBE_ACK:convid%d, acked_mss:%d",connection.convid,acked_mss);
 				l.Infof("setting convid:%d mss:%d",connection.convid,acked_mss)				
 				connection.mss=acked_mss
 				connection.session.SetMss(connection.mss)
@@ -846,7 +844,7 @@ func client_handle_session(server *serverType, connection *serverConnection) {
 				//try the next mss
 				next_mss:=acked_mss+g_client_mss_increment
 				if connection.mss==g_max_mss {
-					l.Errorf("reached maximum mss of %d",g_max_mss)
+					l.Infof("reached maximum mss of %d",g_max_mss)
 					//this should stop the probing
 					connection.settled_mss=acked_mss
 				} else if next_mss>g_max_mss {
@@ -883,20 +881,13 @@ func client_handle_session(server *serverType, connection *serverConnection) {
 
 func client_send_hello(connection *serverConnection,base_convid uint32) {
 	l.Infof("sending HELLO to server convid:%d",connection.convid)
-	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*6000)) 
-	n, err:=connection.session.Write(g_client_hello)
-	if (n<=0) {
-		l.Errorf("err: %d whilst sending hello", n )
-		return
-	}
+
+	_,err:=connection.session.SendHello()
+	
 	if err != nil {
-		if (fmt.Sprintf("%s",err)=="timeout") {
-			kcpstate:=connection.session.GetState()
-			l.Errorf(">>>>>>>>>>>>>HELLO write deadline exceeded: convid:%d kcpstate:%d iface:%s",connection.convid,kcpstate,connection.ifname)
+		l.Errorf(">>>>>>>>>>>>>SEND HELLO error:%s convid:%d iface:%s",err,connection.convid,connection.ifname)
 			connection.txtimeouts++
 			client_disconnect_session_by_convid(base_convid,connection.convid,fmt.Sprintf(">>>>>>>>>>>>>>>HELLO deadline exceeded"))
-		}
-		l.Errorf("HELLO conn write error:", err)
 	}
 }
 
@@ -1167,7 +1158,7 @@ func client_handle_tun(server *serverType) {
 
 func server_listen_udp(tunnelid uint32) {
 
-	remoteConns := new(sync.Map)
+	g_remoteConns = new(sync.Map)
 	
 	for {
 		buf := make([]byte, 1500)
@@ -1177,7 +1168,7 @@ func server_listen_udp(tunnelid uint32) {
 			continue
 		}
 
-  		if s, ok := remoteConns.Load(remoteaddr.String()); !ok {
+  		if s, ok := g_remoteConns.Load(remoteaddr.String()); !ok {
 			
 			//this is a new connection
    			//check for hello message
@@ -1185,6 +1176,10 @@ func server_listen_udp(tunnelid uint32) {
 			l.Infof("pkt from NEWCONN:%s, data:%x",remoteaddr,buf[:n])
 
 			if n==len(g_client_hello) && (buf[0]==0 && buf[1]==0) {
+
+				//TODO: encrypt control messages using...
+				// https://pkg.go.dev/golang.org/x/crypto@v0.27.0/nacl/secretbox
+
 				//decode the convid in the hello
 				b := make([]byte, 2)
 				b[0]=buf[2]
@@ -1194,13 +1189,18 @@ func server_listen_udp(tunnelid uint32) {
 				localaddr:=g_listener.LocalAddr().(*net.UDPAddr)
 
 				l.Infof("received INITIAL HELLO from %s, convid:%d",remoteaddr,hello_convid)
+				if (hello_convid==0) {
+					l.Errorf("received invalid convid:%d from %s", hello_convid, remoteaddr)
+					continue
+				}
 
 				session,_:=NewServerSession(hello_convid,localaddr,remoteaddr,g_listener)
-				remoteConns.Store(remoteaddr.String(), session)
+				g_remoteConns.Store(remoteaddr.String(), session)
 
 				go server_accept_conn(tunnelid,hello_convid,session)
 			} else {
 				l.Errorf("received malformed hello from %s, data:%x",remoteaddr,buf[:n])
+				continue
 			}
 			
   		} else {
@@ -1418,13 +1418,17 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 			
 			if err != nil {
 				if (fmt.Sprintf("%s",err)=="timeout") {
-					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>server read deadline exceeded: convid:%d, kcp state:%d, n:%d",convid,kcpstate,n)
+					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>server read deadline exceeded: convid:%d, kcp state:%d, n:%d, remoteaddr:%s",convid,kcpstate,n,connection.session.RemoteAddr())
 					connection.rxtimeouts++
+					if connection.rxtimeouts>g_client_max_rxtimeouts {
+						server_disconnect_session_by_convid(client.base_convid,convid, "rx timeouts exceeded")
+						return
+					}
 					continue;
 				}
 				l.Debugf("conn read error:%s", err)
 				//close the client connection
-				server_disconnect_session_by_convid(tunnelid,convid,fmt.Sprintf("KCP Conn Read Error:%s",err))
+				server_disconnect_session_by_convid(tunnelid,convid,fmt.Sprintf("Server Conn Read Error:%s",err))
 				return
 			}
 
@@ -1433,7 +1437,10 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 				continue
 			}
 
-			l.Tracef("received pkt len:%d, data:%x",n,message[:n])
+			l.Tracef("received pkt from:%s len:%d, data:%x",session.RemoteAddr(),n,message[:n])
+
+			//we can reset the local rxtimeouts if we received a packet.
+			connection.rxtimeouts=0
 			connection.rxcounter++
 			connection.rxbytes+=uint64(n)
 			//we can assume if we are receiving data it's like a hello
