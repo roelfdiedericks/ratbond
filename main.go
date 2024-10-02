@@ -64,7 +64,7 @@ var g_use_aes=false
 var g_mux_max=1
 
 const g_write_deadline=2000
-const g_client_max_rxtimeouts=5
+const g_client_max_rxtimeouts=3
 const g_client_max_mss_probes=200
 const g_client_mss_increment=4
 const g_max_hello=5
@@ -691,6 +691,11 @@ func run_server() {
 			//l.Warnf("g_client_list: %+v",g_client_list)
 			l.Debugf("g_client_list: \n%s",printClientList(g_client_list))
 			l.Tracef("loads: \n %s",printClientLoads(g_client_list))
+
+			g_remoteConns.Range(func(key, value interface{}) bool {
+				l.Infof("remoteConn:%s",key.(string))
+				return true
+			})
             loopcount = 1
         }
 
@@ -818,7 +823,7 @@ func client_handle_session(server *serverType, connection *serverConnection) {
 			//check for hello message
 			if n==len(g_server_hello) && (message[0]==0 && message[1]==0) {
 				//this is an initial hello message, don't send it to the tun
-				l.Infof("received HELLO convid:%d",connection.convid);
+				l.Infof("received HELLO convid:%d from:%s",connection.convid,connection.session.RemoteAddr());
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -880,7 +885,7 @@ func client_handle_session(server *serverType, connection *serverConnection) {
 
 
 func client_send_hello(connection *serverConnection,base_convid uint32) {
-	l.Infof("sending HELLO to server convid:%d",connection.convid)
+	l.Infof("sending HELLO to server convid:%d, remote:%s",connection.convid,connection.session.RemoteAddr())
 
 	_,err:=connection.session.SendHello()
 	
@@ -1173,6 +1178,12 @@ func server_listen_udp(tunnelid uint32) {
 			//this is a new connection
    			//check for hello message
 
+			g_remoteConns.Range(func(key, value interface{}) bool {
+				l.Infof("remoteConn:%s",key.(string))
+				return true
+			})
+
+
 			l.Infof("pkt from NEWCONN:%s, data:%x",remoteaddr,buf[:n])
 
 			if n==len(g_client_hello) && (buf[0]==0 && buf[1]==0) {
@@ -1196,6 +1207,11 @@ func server_listen_udp(tunnelid uint32) {
 
 				session,_:=NewServerSession(hello_convid,localaddr,remoteaddr,g_listener)
 				g_remoteConns.Store(remoteaddr.String(), session)
+
+				g_remoteConns.Range(func(key, value interface{}) bool {
+					l.Infof("remoteConn:%s",key.(string))
+					return true
+				})
 
 				go server_accept_conn(tunnelid,hello_convid,session)
 			} else {
@@ -1407,7 +1423,13 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 			if kcpstate==0xFFFFFFFF {
 				//the connection is dead according to kcp
 				l.Errorf("kcp convid:%d is DEAD, closing...",convid)
-				server_disconnect_session_by_convid(client.base_convid,convid, "KCP Conn Dead")
+				server_disconnect_session_by_convid(client.base_convid,convid, "KCP Conn Dead",session)
+				return
+			}
+
+			if (session.is_closed) {
+				//the connection is dead according to kcp
+				l.Errorf("session:%s is closed, exiting...",session.remote_addr.String())
 				return
 			}
 
@@ -1421,14 +1443,14 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 					l.Infof(">>>>>>>>>>>>>>>>>>>>>>>>>>>server read deadline exceeded: convid:%d, kcp state:%d, n:%d, remoteaddr:%s",convid,kcpstate,n,connection.session.RemoteAddr())
 					connection.rxtimeouts++
 					if connection.rxtimeouts>g_client_max_rxtimeouts {
-						server_disconnect_session_by_convid(client.base_convid,convid, "rx timeouts exceeded")
+						server_disconnect_session_by_convid(client.base_convid,convid, "rx timeouts exceeded",connection.session)
 						return
 					}
 					continue;
 				}
 				l.Debugf("conn read error:%s", err)
 				//close the client connection
-				server_disconnect_session_by_convid(tunnelid,convid,fmt.Sprintf("Server Conn Read Error:%s",err))
+				server_disconnect_session_by_convid(tunnelid,convid,fmt.Sprintf("Server Conn Read Error:%s",err),connection.session)
 				return
 			}
 
@@ -1455,7 +1477,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 				b[1]=message[3]
 				hello_convid:=binary.LittleEndian.Uint16(b)
 				//this is an initial hello message, don't send it to the tun
-				l.Infof("received HELLO convid:%d",hello_convid);
+				l.Infof("received HELLO convid:%d from:%s",hello_convid,connection.session.RemoteAddr());
 				connection.last_hello=time.Now()
 				continue;
 			}
@@ -1499,7 +1521,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 				l.Errorf("received LINKDOWN:convid%d",linkdown);
 
 				//close the client connection
-				server_disconnect_session_by_convid(tunnelid,uint32(linkdown),"RECVD Linkdown")
+				server_disconnect_session_by_convid(tunnelid,uint32(linkdown),"RECVD Linkdown",connection.session)
 				continue;
 			}
 
@@ -1517,7 +1539,7 @@ func server_accept_conn(tunnelid uint32, convid uint32, session *RatSession) {
 				if err != nil {
 					l.Errorf("iface write err:%s, len:%d", err,n)
 					//close the client connection
-					server_disconnect_session_by_convid(tunnelid,convid,"TUN write error")
+					server_disconnect_session_by_convid(tunnelid,convid,"TUN write error",connection.session)
 					return
 				} else {
 					l.Tracef("iface write done")
@@ -1539,7 +1561,7 @@ func server_close_connection(client *clientType, client_conn *clientConnection, 
 	client_conn.session.Close()
 }
 
-func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,reason string) {
+func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,reason string, session *RatSession) {
 	l.Warnf("server disconnect tunnelid:%d, convid:%d reason:%s",tunnelid,disc_convid,reason)
 	client,ok := g_client_list[tunnelid]
 	if !ok || client==nil {
@@ -1548,10 +1570,18 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 		return
 	}
 
+	if session!=nil {
+		session.Close()
+	}
+
 	//find the kcp connection matching the disc_convid and disconnect/destroy it
 	client.mu.Lock()
 	for convid, client_connection := range client.connections {
 		if client_connection.convid==disc_convid {
+			if client_connection.session.is_closed {
+				l.Errorf("session is already closed!")
+				continue
+			}
 			l.Infof("disconnecting tunnelid:%d, kcp convid: %d",tunnelid,client_connection.convid)
 			client.consistent.Remove(fmt.Sprintf("%d",convid)) //remove it from consistent hashing
 			server_close_connection(client,client_connection,convid)			
@@ -1565,7 +1595,7 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 
 
 func server_send_hello(connection *clientConnection) {
-	l.Infof("sending HELLO to client convid:%d",connection.convid)
+	l.Infof("sending HELLO to client convid:%d, remote:%s",connection.convid,connection.session.RemoteAddr())
 	connection.session.SetWriteDeadline(time.Now().Add(time.Millisecond*3000)) 
 	n, err:=connection.session.Write(g_server_hello)
 	if (n<=0) {
@@ -1622,7 +1652,7 @@ func server_send_client_pings() {
 			l.Tracef("convid:%d hello age:%.2f",convid,diff)
 			//if last hello >g_max_hello  kill the session
 			if (diff>g_max_hello) {
-				server_disconnect_session_by_convid(client.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff))
+				server_disconnect_session_by_convid(client.base_convid,connection.convid,fmt.Sprintf("HELLO timeout age:%.2f",diff),nil)
 				continue;
 			}	
 
@@ -1745,7 +1775,7 @@ func server_handle_tun(client *clientType) {
 		if kcpstate==0xFFFFFFFF {
 			//this connection is dead according to state layer
 			l.Errorf("convid:%d is DEAD, closing...",connection.convid)
-			server_disconnect_session_by_convid(client.base_convid,connection.convid,"KCP dead")
+			server_disconnect_session_by_convid(client.base_convid,connection.convid,"KCP dead",nil)
 
 			//but we carry on handling the tunnel traffic, until something is around . The current packet is getting lost however. //TODO: could try again from top? but that could deadlock
 			goto tryagain;
@@ -1768,7 +1798,7 @@ func server_handle_tun(client *clientType) {
 				}
 				l.Errorf("kcp conn write error:", err)
 				//close the client connection
-				server_disconnect_session_by_convid(client.base_convid,connection.convid,"KCP Conn write error")
+				server_disconnect_session_by_convid(client.base_convid,connection.convid,"KCP Conn write error",nil)
 
 				//but we carry on handling the tunnel traffic, until something is around . The current packet is getting lost however. //TODO: could try again from top? but that could deadlock
 				goto tryagain;

@@ -28,6 +28,7 @@ type RatSession struct {
 	mu 			sync.Mutex
 
 	chReadEvent  chan []byte
+	chCloseEvent  chan []byte
 	chSocketReadError    chan struct{}
 
 	mtu int
@@ -78,6 +79,7 @@ func NewServerSession(convid uint32, localaddr *net.UDPAddr,remoteaddr *net.UDPA
 	session.mtu=1300
 
 	session.chReadEvent = make(chan []byte, 1)
+	session.chCloseEvent = make(chan []byte, 1)
 	session.chSocketReadError = make(chan struct{})
 
 	l.Tracef("NewRatSession: %+v",session)
@@ -125,13 +127,19 @@ func (s *RatSession) Read(b []byte) (n int, err error) {
 			//TODO: this involves copying the buffer, not great
 			copy(b,buff)
 			return len(buff),nil
+		case <-s.chCloseEvent:
+			l.Errorf("CONNECTION WAS CLOSED: %s",s.remote_addr.String())
+			return 0,errors.New("connection closed")
 		case <-c:
 			return 0, errors.WithStack(ErrTimeout)
 	}
 }
 
 func (s *RatSession) DataReceived(b []byte) { 
-	l.Tracef("DataReceived: len:%d data:%x",len(b),b)
+	l.Tracef("DataReceived: len:%d data:%x, remote:%s",len(b),b,s.remote_addr.String())
+	if (s.is_closed) {
+		return
+	}
 	s.chReadEvent <- b
 }
 
@@ -158,14 +166,26 @@ func (s *RatSession) Write(b []byte) (n int, err error) {
 
 func (s *RatSession) Close() error {
 	if s==nil {
+		l.Errorf("session is nil!")
 		return errors.New("nil session")
 	}
 	
+	s.is_closed=true
+	l.Warnf("closing connection to %s",s.remote_addr.String())
 	if (s.is_client) {
 		return s.udp_conn.Close()
 	} else {
 		g_remoteConns.Delete(s.remote_addr.String())
-		s.is_closed=true
+
+		g_remoteConns.Range(func(key, value interface{}) bool {
+			l.Infof("remoteConn:%s",key.(string))
+			return true
+		})
+
+		//send an empty array to notify the reader of the close event
+		b:=make([]byte, 0)
+		s.chCloseEvent <- b
+
 		return nil
 	}
 	
@@ -267,7 +287,11 @@ func (s *RatSession) GetConv() uint32 {
 
 // Send a hello message over the session
 func (s *RatSession) SendHello() (bool, error) { 
+	if (s.is_closed) {
+		return false,errors.New("session is closed")
+	}
 
+	l.Debugf("sending hello to %s",s.remote_addr.String())
 	//Send a hello message with our tunnel id
 	s.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline))
 	var pkt []byte
