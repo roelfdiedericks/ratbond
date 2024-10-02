@@ -1,133 +1,198 @@
 package main
 import (
-	"github.com/roelfdiedericks/kcp-go"
 	"net"
 	"time"
-	"errors"
-	"golang.org/x/crypto/pbkdf2"
-	"crypto/sha1"
+	"sync"
+	"encoding/binary"
+	"github.com/pkg/errors"
 )
+
+
+var g_udp_overhead=20+8 // (IP = 20, udp =8)
+
+var g_listener *net.UDPConn
+var g_accept_chan chan *RatSession
+
 type RatSession struct {
 	convid uint32
 
-	udp_conn       *net.UDPConn // the underlying packet connection
-	remote     net.Addr  // remote peer address
+	udp_conn    *net.UDPConn // the underlying packet connection	
+	local_addr  *net.UDPAddr // locally bound address     
+	remote_addr *net.UDPAddr // remote peer address
+	is_client bool
 
-	kcp *kcp.UDPSession
+	rd         	time.Time // read deadline
+	mu 			sync.Mutex
 
-	// settings
-	
+	chReadEvent  chan []byte
+	chSocketReadError    chan struct{}
+
+	mtu int
 }
 
-
-// no fec
-
-const dataSize=0
-const paritySize=0
-
-
-
-//regular fec
-/*
-const dataSize=10
-const paritySize=3
-*/
+var (
+	ErrConnectionectionOpen   = errors.New("Connectionection is already open.")
+	ErrConnectionectionClosed = errors.New("Connectionection is already closed.")
+	ErrPacketSize             = errors.New("Packet size exceeds MTU.")
+	ErrShortWrite             = errors.New("Short write: Send was incomplete.")
+	ErrDiscard                = errors.New("Packet is not meant for us.")
+	ErrTimeout                = errors.New("timeout")
+)
 
 
-// minimal fec
-/*
-const dataSize=10
-const paritySize=1
-*/
-
-
-// max fec
-/*
-const dataSize=15
-const paritySize=5
-*/
-
-
-// NewSession establishes a session and talks KCP protocol over a packet connection.
-func NewSession(convid uint32, l_udpaddr *net.UDPAddr,l_conn *net.UDPConn) (*RatSession, error) {
+// NewClientSession establishes a session and talks RATBOND protocol over a packet connection.
+func NewClientSession(convid uint32, localaddr *net.UDPAddr,remoteaddr *net.UDPAddr, conn *net.UDPConn) (*RatSession, error) {
 	if (convid==0) {
 		l.Panicf("convid = 0 !")
 	}
 	session:=new(RatSession)
 	session.convid=convid
 	
+	session.remote_addr=remoteaddr
+	session.local_addr=localaddr
+	session.udp_conn=conn
+	session.is_client=true
+	session.mtu=1300
 
-	key := pbkdf2.Key([]byte(g_secret), []byte("ratbond salt"), 1024, 32, sha1.New)
-	var block kcp.BlockCrypt
-	if (g_use_aes) {
-		block, _ = kcp.NewAESBlockCrypt(key)
-	} else {
-		block, _ = kcp.NewNoneBlockCrypt(key)
-	}
-
-	kcp,err:=kcp.NewConn3(convid, l_udpaddr, block, dataSize, paritySize, l_conn)
-
-	if err!=nil {
-		return nil,err
-	}
+	l.Tracef("NewRatSession: %+v",session)
 	
-	session.kcp=kcp
-	session.udp_conn=l_conn
-	l.Tracef("NewSession: %+v",session)
+	return session,nil
+}
 
-	session.setKCPOptions(session.kcp) //TODO, fixme
+func NewServerSession(convid uint32, localaddr *net.UDPAddr,remoteaddr *net.UDPAddr, conn *net.UDPConn) (*RatSession, error) {
+	if (convid==0) {
+		l.Panicf("convid = 0 !")
+	}
+	session:=new(RatSession)
+	session.convid=convid
+	
+	session.remote_addr=remoteaddr
+	session.local_addr=localaddr
+	session.udp_conn=conn
+	session.is_client=false
+	session.mtu=1300
 
+	session.chReadEvent = make(chan []byte, 1)
+	session.chSocketReadError = make(chan struct{})
+
+	l.Tracef("NewRatSession: %+v",session)
+	
 	return session,nil
 }
 
 // Read implements net.Conn
 func (s *RatSession) Read(b []byte) (n int, err error) {
-	//s.kcp.SetReadDeadline(time.Now().Add(time.Millisecond*2000))
 	if s==nil {
 		return 0,errors.New("nil session")
 	}
-	return s.kcp.Read(b)
+
+	//client connections are simple, simply use the upper layer read.
+	if (s.is_client) {
+		return s.udp_conn.Read(b)
+	}
+
+
+	//server connections are harder, we have to wait for a message from the channel, or pass the deadline
+//RESET_TIMER:
+    var timeout *time.Timer
+    // deadline for current reading operation
+    var c <-chan time.Time
+    if !s.rd.IsZero() {
+        delay := time.Until(s.rd)
+        timeout = time.NewTimer(delay)
+        c = timeout.C
+        defer timeout.Stop()
+    }	
+
+	 // if it runs here, that means we have to block the call, and wait until the
+    // next data packet arrives via the channel
+	select {
+		case buff := <-s.chReadEvent:
+			/*if timeout != nil {
+				timeout.Stop()
+				goto RESET_TIMER
+			}
+			*/
+			l.Tracef("Read got data len:%d data:%x", len(buff),buff)
+			//TODO: this involves copying the buffer, not great
+			copy(b,buff)
+			return len(buff),nil
+		case <-c:
+			return 0, errors.WithStack(ErrTimeout)
+	}
+}
+
+func (s *RatSession) DataReceived(b []byte) { 
+	l.Tracef("DataReceived: len:%d data:%x",len(b),b)
+	s.chReadEvent <- b
 }
 
 // Write implements net.Conn
 func (s *RatSession) Write(b []byte) (n int, err error) { 
-	//s.kcp.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline))
+	l.Tracef("session write convid:%d, len:%d, dst:%+v, buf:%+v",s.convid,len(b),s.remote_addr,b)
 	if s==nil {
 		return 0,errors.New("nil session")
 	}
-	return s.kcp.Write(b)
+	if len(b) > s.PayloadSize() {
+		return 0,ErrPacketSize
+	}
+	
+	if (s.is_client) {
+		return s.udp_conn.Write(b)
+	} else {
+		return s.udp_conn.WriteToUDP(b,s.remote_addr)
+	}
 }
 
 func (s *RatSession) Close() error {
 	if s==nil {
 		return errors.New("nil session")
 	}
-	if (s.udp_conn!=nil) {
-		s.udp_conn.Close()
-	}
-	return s.kcp.Close()
+	return s.udp_conn.Close()
 }
 	
 func (s *RatSession) GetState() uint32 { 
 	if s==nil {
 		return 0
 	}
-	return s.kcp.GetState() 
+	return 0
 }
 
+
+func (s *RatSession) PayloadSize() int {
+	size := int(s.mtu) - g_udp_overhead
+	return size
+}
+
+func (s *RatSession) GetMss() int {
+	return s.PayloadSize()
+}
+
+func (s *RatSession) SetMss(mss int) {
+	s.SetMtu(mss+g_udp_overhead)
+}
+
+
+func (s *RatSession) SetMtu(mtu int) {
+	s.mtu=mtu
+}
+
+func (s *RatSession) GetMtu() int {
+	return s.mtu
+}
 
 func (s *RatSession) SetReadBuffer(bytes int) error {
 	if s==nil {
 		return errors.New("nil session")
 	}
-	return s.kcp.SetReadBuffer(bytes)
+	return nil
 }
 
 func (s *RatSession) SetWriteBuffer(bytes int) error {
 	if s==nil {
 		return errors.New("nil session")
 	}
-	return s.kcp.SetWriteBuffer(bytes)
+	return nil
 }
 
 
@@ -136,20 +201,37 @@ func (s *RatSession) SetReadDeadline(t time.Time) error {
 	if s==nil {
 		return errors.New("nil session")
 	}
-	return s.kcp.SetReadDeadline(t)
+	if (s.is_client) {
+		return s.udp_conn.SetReadDeadline(t)
+	}
+
+	//server implementation
+	s.mu.Lock()
+    s.rd = t
+    s.mu.Unlock()
+    return nil
 }
+
 // SetWriteDeadline implements the Conn SetWriteDeadline method.
 func (s *RatSession) SetWriteDeadline(t time.Time) error {
 	if s==nil {
 		return errors.New("nil session")
 	}
-	return s.kcp.SetWriteDeadline(t)
+	return s.udp_conn.SetWriteDeadline(t)
 }
 
-// RemoteAddr returns the remote network address. The Addr returned is shared by all invocations of RemoteAddr, so do not modify it.
+// RemoteAddr returns the remote network address.
 func (s *RatSession) RemoteAddr() net.Addr { 
 	if s!=nil {
-		return s.remote 
+		return s.remote_addr
+	} 
+	return nil
+}
+
+// LocalAddr returns the local network address.
+func (s *RatSession) LocalAddr() net.Addr { 
+	if s!=nil {
+		return s.remote_addr
 	} 
 	return nil
 }
@@ -162,41 +244,47 @@ func (s *RatSession) GetConv() uint32 {
 	return 0
 }
 
-func (s *RatSession) setKCPOptions(conn *kcp.UDPSession) {
-	if (s.kcp!=nil) {
-		NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //useful mode
-		//NoDelay, Interval, Resend, NoCongestion := 1, 10, 2, 1 //turbo mode
-		//NoDelay, Interval, Resend, NoCongestion := 0, 40, 0, 0 //normal mode
-		MTU:=g_kcp_mss
-		SndWnd:=1024 //2048 seems good for thruput, but bad for reliability
-		RcvWnd:=1024
-		AckNodelay:=false //this is more speedy
-		s.kcp.SetStreamMode(true) //message mode or stream mode, warrants more checking, stream mode seems faster which is interesting
-		s.kcp.SetWriteDelay(false)
-		s.kcp.SetNoDelay(NoDelay, Interval, Resend, NoCongestion)
-		s.kcp.SetMtu(MTU)
-		s.kcp.SetWindowSize(SndWnd, RcvWnd)
-		s.kcp.SetACKNoDelay(AckNodelay)
 
-		s.kcp.SetDeadlink(1000)
+// Send a hello message over the session
+func (s *RatSession) SendHello() { 
+
+	//Send a hello message with our tunnel id
+	s.SetWriteDeadline(time.Now().Add(time.Millisecond*g_write_deadline))
+	var pkt []byte
+	if s.is_client {
+		pkt=make([]byte, len(g_client_hello))
+		copy(pkt,g_client_hello)
+	} else {
+		pkt=make([]byte, len(g_client_hello))
+		copy(pkt,g_server_hello)
+	}
+	b := make([]byte, 2)
+	binary.LittleEndian.PutUint16(b, uint16(s.convid))
+	pkt[2]=b[0]
+	pkt[3]=b[1]
+
+	//TODO: we may want to add a sequence number
+
+	n,err:=s.Write(pkt)
+	if err!=nil || n==0 {
+		l.Errorf("send hello FAILED! err:%s n:%d",err,n )
 	}
 }
 
 // ========================== LISTENER ===========================
 // ================================================================
-func createListener() (*kcp.Listener, error) {
+func createListener(listen_addr string) (*net.UDPConn, error) {
 	l.Debugf("createListener")
-		key := pbkdf2.Key([]byte(g_secret), []byte("ratbond salt"), 1024, 32, sha1.New)
-		var block kcp.BlockCrypt
-		if (g_use_aes) {
-			block, _ = kcp.NewAESBlockCrypt(key)
-		} else {
-			block, _ = kcp.NewNoneBlockCrypt(key)
-		}
+	l.Infof("listening on %s",listen_addr)
+	udpaddr, err := net.ResolveUDPAddr("udp", listen_addr)
+    if err != nil {
+        return nil, errors.WithStack(err)
+    }
+    conn, err := net.ListenUDP("udp", udpaddr)
+    if err != nil {
+        return nil, errors.WithStack(err)
+    }
 
-		l.Infof("listening on %s",g_listen_addr)
-		//return net.Listen("tcp", g_listen_addr)
-		listener,err:=kcp.ListenWithOptions(g_listen_addr, block, dataSize, paritySize);
-		return listener,err
+	return conn,err
 }
 	
