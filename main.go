@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	netip "net/netip"
+	"golang.org/x/net/ipv4"
 
 	"time"
 	"encoding/binary"
@@ -598,6 +599,13 @@ func run_client() {
 		
 		//recycle every 15 seconds, do occasional stuff
         if loopcount%1500 == 0 {
+
+			// could do stuff like here, on the client, update the server remote addr?
+			// on the client, send magic packet, in case IP address has changed?
+			//theoretically this shouldn't be required, we will re-establish session after hello timeouts etc.
+			// https://github.com/dsnet/udptunnel/blob/0230d34fb1b5d10cb73217d93e41e24e8e42b547/tunnel.go#L125
+
+
             l.Tracef("loop:%d, housekeeping", loopcount)
             loopcount = 1
 			l.Debugf("g_server_list: \n%s",printServerList(g_server_list))
@@ -1164,7 +1172,30 @@ func client_handle_tun(server *serverType) {
 func server_listen_udp(tunnelid uint32) {
 
 	g_remoteConns = new(sync.Map)
-	
+	/* this is start of using batched reads into a queue
+	batchSize:=16
+	xconn:=ipv4.NewPacketConn(g_listener)
+	msgs := make([]ipv4.Message, batchSize)
+	for k := range msgs {
+		msgs[k].Buffers = [][]byte{make([]byte, 1500)}
+	}
+		if count, err := s.xconn.ReadBatch(msgs, 0); err == nil {
+			for i := 0; i < count; i++ {
+				msg := &msgs[i]
+				// make sure the packet is from the same source
+				if src == "" { // set source address if nil
+					src = msg.Addr.String()
+				} else if msg.Addr.String() != src {
+					atomic.AddUint64(&DefaultSnmp.InErrs, 1)
+					continue
+				}
+
+				// source and size has validated
+				s.packetInput(msg.Buffers[0][:msg.N])
+			}
+		*/
+
+		
 	for {
 		buf := make([]byte, 1500)
 		n, remoteaddr, err := g_listener.ReadFromUDP(buf)
@@ -1185,6 +1216,7 @@ func server_listen_udp(tunnelid uint32) {
 
 
 			l.Infof("pkt from NEWCONN:%s, data:%x",remoteaddr,buf[:n])
+			
 
 			if n==len(g_client_hello) && (buf[0]==0 && buf[1]==0) {
 
@@ -1579,8 +1611,7 @@ func server_disconnect_session_by_convid(tunnelid uint32, disc_convid uint32,rea
 	for convid, client_connection := range client.connections {
 		if client_connection.convid==disc_convid {
 			if client_connection.session.is_closed {
-				l.Errorf("session is already closed!")
-				continue
+				l.Errorf("session is already closed!")				
 			}
 			l.Infof("disconnecting tunnelid:%d, kcp convid: %d",tunnelid,client_connection.convid)
 			client.consistent.Remove(fmt.Sprintf("%d",convid)) //remove it from consistent hashing

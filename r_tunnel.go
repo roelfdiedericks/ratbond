@@ -7,6 +7,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+//notes:
+// for extending the protocol, perhaps use https://github.com/raszia/gotiny serialization?
+// supports encryption too....
 
 var g_udp_overhead=20+8 // (IP = 20, udp =8)
 
